@@ -8,13 +8,14 @@ import { DailyLogView } from './components/DailyLog';
 import { UserManagement } from './components/UserManagement';
 import { GlobalTaskList } from './components/GlobalTaskList';
 import { MaterialOrders } from './components/MaterialOrders';
+import { AuthScreen } from './components/AuthScreen';
 import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, Landmark, Bell, Users, ListTodo, CheckCircle2, Calendar, Edit, Save, Image as ImageIcon, ExternalLink, Package, Plus, ChevronDown, ArrowLeft, Archive, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon } from 'lucide-react';
 
 // --- Main App Component ---
 
 const App: React.FC = () => {
   // Global State
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); // Default to Marcos
+  const [currentUser, setCurrentUser] = useState<User | null>(null); // Start as null for Login Screen
   
   // Navigation State
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'WORKS' | 'HISTORY' | 'FINANCE' | 'REGISTRATIONS' | 'ALL_TASKS' | 'MATERIALS'>('DASHBOARD');
@@ -41,18 +42,43 @@ const App: React.FC = () => {
   const [isEditWorkModalOpen, setIsEditWorkModalOpen] = useState(false);
   const [editingWork, setEditingWork] = useState<ConstructionWork | null>(null);
 
+  // --- Auth Logic ---
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+  };
+
+  const handleRegister = (user: User) => {
+    setUsers(prev => [...prev, user]);
+    setCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setSelectedWorkId(null);
+    setActiveTab('DASHBOARD');
+  };
+
+  // Return AuthScreen if not logged in
+  if (!currentUser) {
+      return (
+          <AuthScreen 
+             users={users} 
+             onLogin={handleLogin} 
+             onRegister={handleRegister} 
+          />
+      );
+  }
+
   // --- Computed Data: Visibility ---
   // Filter works based on user role. Clients see only their works. Others see all.
-  const visibleWorks = useMemo(() => {
+  const visibleWorks = works.filter(w => {
       if (currentUser.role === UserRole.CLIENT || currentUser.category === 'CLIENT') {
-          return works.filter(w => w.clientId === currentUser.id);
+          return w.clientId === currentUser.id;
       }
-      return works;
-  }, [works, currentUser]);
+      return true;
+  });
 
   // --- Helpers & Permissions ---
-  // We search in 'works' generally, but access is implicitly restricted by UI. 
-  // Security-wise, we could restrict selection here too.
   const selectedWork = visibleWorks.find(w => w.id === selectedWorkId);
   
   const activeTasks = tasks.filter(t => t.workId === selectedWorkId);
@@ -68,30 +94,26 @@ const App: React.FC = () => {
   };
 
   // --- Financial Alerts Logic ---
-  const financialAlerts = useMemo(() => {
-    // Check permission instead of strict role
-    if (!hasPermission('viewFinance')) return [];
+  const financialAlerts = finance.filter(record => {
+    // Check permission
+    if (!hasPermission('viewFinance')) return false;
+    if (record.status !== 'Pendente') return false;
+    
+    // Ensure we only show alerts for visible works
+    const isVisibleWork = visibleWorks.some(w => w.id === record.workId);
+    if (!isVisibleWork) return false;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const [y, m, d] = record.dueDate.split('-').map(Number);
+    const dueDate = new Date(y, m - 1, d);
+    
+    const diffTime = dueDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    return finance.filter(record => {
-      if (record.status !== 'Pendente') return false;
-      // Ensure we only show alerts for visible works
-      const isVisibleWork = visibleWorks.some(w => w.id === record.workId);
-      if (!isVisibleWork) return false;
-
-      // Parse date manually to ensure local timezone comparison
-      const [y, m, d] = record.dueDate.split('-').map(Number);
-      const dueDate = new Date(y, m - 1, d);
-      
-      const diffTime = dueDate.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-      // "Vencendo em 2 dias" covers today (0), tomorrow (1), and day after (2) + overdue (negative)
-      return diffDays <= 2;
-    }).sort((a,b) => a.dueDate.localeCompare(b.dueDate));
-  }, [finance, currentUser, profiles, visibleWorks]); 
+    // "Vencendo em 2 dias" covers today (0), tomorrow (1), and day after (2) + overdue
+    return diffDays <= 2;
+  }).sort((a,b) => a.dueDate.localeCompare(b.dueDate));
 
   // --- Handlers ---
 
@@ -108,8 +130,8 @@ const App: React.FC = () => {
     setTasks(prev => [...prev, newTask]);
   };
 
-  const handleAddLog = () => {
-    alert("Funcionalidade de adicionar registro (mock)");
+  const handleAddLog = (newLog: DailyLog) => {
+    setLogs(prev => [newLog, ...prev]);
   };
 
   // Finance Handlers
@@ -150,7 +172,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteCategory = (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir esta categoria? Lançamentos antigos manterão o nome, mas não será possível selecionar novamente.')) {
+    if (window.confirm('Tem certeza que deseja excluir esta categoria?')) {
       setFinanceCategories(prev => prev.filter(c => c.id !== id));
     }
   };
@@ -162,6 +184,10 @@ const App: React.FC = () => {
 
   const handleUpdateUser = (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    // Update current user if self-editing
+    if (currentUser.id === updatedUser.id) {
+        setCurrentUser(updatedUser);
+    }
   };
 
   const handleDeleteUser = (userId: string) => {
@@ -1006,6 +1032,9 @@ const App: React.FC = () => {
                     <DailyLogView 
                         logs={activeLogs}
                         users={users}
+                        tasks={activeTasks}
+                        workId={selectedWork.id}
+                        currentUser={currentUser}
                         onAddLog={handleAddLog}
                     />
                 </div>
@@ -1056,6 +1085,9 @@ const App: React.FC = () => {
                       <Users size={24} /> Cadastros
                   </button>
               )}
+              <button onClick={handleLogout} className="flex items-center gap-3 text-slate-300 hover:text-white text-lg w-full border-t border-slate-800 pt-4 mt-4">
+                  <LogOut size={24} /> Sair
+              </button>
           </nav>
       </div>
   );
@@ -1137,24 +1169,19 @@ const App: React.FC = () => {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-            {/* User Profile Switcher (Simulating Auth) */}
-            <div className="mb-4 px-2">
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Simular Usuário</label>
-                <select 
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white outline-none focus:border-pms-500"
-                    value={currentUser.id}
-                    onChange={(e) => {
-                        const u = users.find(user => user.id === e.target.value);
-                        if (u) setCurrentUser(u);
-                    }}
-                >
-                    {users.map(u => (
-                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
-                    ))}
-                </select>
+            {/* User Profile Info */}
+            <div className="flex items-center gap-3 mb-4 px-2">
+                <img src={currentUser.avatar} alt="User" className="w-8 h-8 rounded-full border border-slate-600" />
+                <div className="overflow-hidden">
+                    <p className="text-sm font-bold text-white truncate">{currentUser.name}</p>
+                    <p className="text-xs text-slate-400 truncate">{currentUser.role}</p>
+                </div>
             </div>
 
-            <button className="flex items-center gap-3 w-full px-4 py-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+            <button 
+                onClick={handleLogout}
+                className="flex items-center gap-3 w-full px-4 py-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+            >
                 <LogOut size={20} />
                 <span className="text-sm font-medium">Sair</span>
             </button>

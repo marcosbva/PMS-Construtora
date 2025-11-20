@@ -144,6 +144,10 @@ export interface DailyLog {
   content: string;
   images: string[];
   type: 'Diário' | 'Vistoria' | 'Alerta';
+  // New fields for detailed reporting
+  weather?: 'Sol' | 'Nublado' | 'Chuva' | 'Neve';
+  relatedTaskId?: string;
+  teamIds?: string[]; // Employees working that day
 }
 
 // --- MATERIAL ORDERS ---

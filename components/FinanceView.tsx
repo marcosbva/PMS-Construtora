@@ -476,7 +476,15 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
              </div>
 
              <div className="flex items-center gap-2">
-                <Filter size={16} className="text-slate-400" />
+                {!isGlobal && (
+                    <button 
+                        onClick={() => handleOpenModal()}
+                        className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-600 hover:border-pms-500 hover:text-pms-600 transition-all shadow-sm"
+                    >
+                        <Plus size={14} /> Novo
+                    </button>
+                )}
+                <Filter size={16} className="text-slate-400 ml-2" />
                 <select 
                     className="bg-white border border-slate-300 rounded-lg py-1.5 px-3 text-sm outline-none focus:ring-2 focus:ring-pms-500"
                     value={viewFilter}
@@ -717,36 +725,14 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                            </div>
                            {onAddCategory && (
                                <button 
-                                   onClick={() => setIsAddingCategory(!isAddingCategory)}
-                                   className={`px-2 rounded-lg border transition-colors ${isAddingCategory ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-500 hover:bg-slate-100'}`}
+                                   onClick={() => setIsAddingCategory(true)}
+                                   className="px-2 rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-100 hover:text-pms-600 transition-colors"
                                    title="Criar nova categoria"
                                >
                                    <Plus size={18} />
                                </button>
                            )}
                        </div>
-                       
-                       {/* Inline Category Creation */}
-                       {isAddingCategory && (
-                           <div className="mt-2 p-2 bg-slate-50 rounded-lg border border-slate-200 animate-in fade-in slide-in-from-top-1">
-                               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nova Categoria</label>
-                               <div className="flex gap-2">
-                                   <input 
-                                       type="text"
-                                       placeholder="Nome..."
-                                       className="flex-1 px-2 py-1 text-sm border border-slate-300 rounded"
-                                       value={newCategoryName}
-                                       onChange={(e) => setNewCategoryName(e.target.value)}
-                                   />
-                                   <button 
-                                       onClick={handleSaveNewCategory}
-                                       className="bg-pms-600 text-white text-xs font-bold px-2 rounded hover:bg-pms-500"
-                                   >
-                                       OK
-                                   </button>
-                               </div>
-                           </div>
-                       )}
                     </div>
 
                     {/* Status */}
@@ -781,6 +767,44 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 </button>
              </div>
           </div>
+        </div>
+      )}
+
+      {/* NESTED MODAL FOR CATEGORY CREATION */}
+      {isAddingCategory && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
+             <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+                 <div className="flex justify-between items-center mb-4">
+                     <h3 className="font-bold text-slate-800 text-lg">Nova Categoria</h3>
+                     <button onClick={() => setIsAddingCategory(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                 </div>
+                 <p className="text-xs text-slate-500 mb-3">Crie uma nova categoria para classificar suas despesas ou receitas.</p>
+                 
+                 <input 
+                    type="text" 
+                    autoFocus
+                    placeholder="Nome da Categoria (ex: Combustível)"
+                    className="w-full border border-slate-300 rounded-lg p-3 mb-6 focus:ring-2 focus:ring-pms-500 outline-none"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                 />
+                 
+                 <div className="flex justify-end gap-2">
+                     <button 
+                        onClick={() => setIsAddingCategory(false)}
+                        className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-bold"
+                     >
+                         Cancelar
+                     </button>
+                     <button 
+                        onClick={handleSaveNewCategory}
+                        disabled={!newCategoryName}
+                        className="px-4 py-2 bg-pms-600 text-white rounded-lg font-bold hover:bg-pms-500 disabled:opacity-50"
+                     >
+                         Salvar
+                     </button>
+                 </div>
+             </div>
         </div>
       )}
     </div>
