@@ -1,0 +1,8 @@
+{
+  "name": "Copy of PMS Construtora Manager",
+  "description": "Sistema integrado de gestão de obras, tarefas (Kanban) e financeiro focado em mobilidade e simplicidade.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
