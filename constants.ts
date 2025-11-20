@@ -1,6 +1,5 @@
 
-
-import { ConstructionWork, User, UserRole, WorkStatus, Task, TaskStatus, TaskPriority, FinancialRecord, FinanceType, FinanceCategory, DailyLog, UserProfile, MaterialOrder, OrderStatus, TaskStatusDefinition, Material } from './types';
+import { ConstructionWork, User, UserRole, WorkStatus, Task, TaskStatus, TaskPriority, FinancialRecord, FinanceType, DailyLog, UserProfile, MaterialOrder, OrderStatus, TaskStatusDefinition, Material, FinanceCategoryDefinition } from './types';
 
 // Helper to get a date string relative to today
 const getFutureDate = (days: number) => {
@@ -17,6 +16,17 @@ export const DEFAULT_TASK_STATUSES: TaskStatusDefinition[] = [
   { id: TaskStatus.WAITING_MATERIAL, label: 'Aguard. Material', colorScheme: 'yellow', order: 3 },
   { id: TaskStatus.NC, label: 'Não Conformidade', colorScheme: 'red', order: 4 },
   { id: TaskStatus.DONE, label: 'Concluído', colorScheme: 'green', order: 5 },
+];
+
+export const DEFAULT_FINANCE_CATEGORIES: FinanceCategoryDefinition[] = [
+  { id: 'cat_mat', name: 'Material', type: 'EXPENSE' },
+  { id: 'cat_labor', name: 'Mão de Obra', type: 'EXPENSE' },
+  { id: 'cat_fee', name: 'Honorário', type: 'INCOME' },
+  { id: 'cat_tax', name: 'Imposto', type: 'EXPENSE' },
+  { id: 'cat_log', name: 'Logística/Frete', type: 'EXPENSE' },
+  { id: 'cat_serv', name: 'Serviços Terceiros', type: 'EXPENSE' },
+  { id: 'cat_proj', name: 'Projetos', type: 'BOTH' },
+  { id: 'cat_other', name: 'Outros', type: 'BOTH' }
 ];
 
 // --- PROFILES ---
@@ -276,7 +286,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
     workId: 'w1',
     entityId: 'u6', // Casa do Cimento
     type: FinanceType.EXPENSE,
-    category: FinanceCategory.MATERIAL,
+    category: 'Material',
     description: 'Cimento e Areia (Lote 1)',
     amount: 2500.00,
     dueDate: '2024-05-15',
@@ -288,7 +298,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
     workId: 'w1',
     entityId: 'u2', // Pedro
     type: FinanceType.EXPENSE,
-    category: FinanceCategory.LABOR,
+    category: 'Mão de Obra',
     description: 'Pagamento Quinzenal Equipe',
     amount: 8000.00,
     dueDate: '2024-05-30',
@@ -299,7 +309,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
     workId: 'w2',
     entityId: 'u5', // TecnoSoluções
     type: FinanceType.INCOME,
-    category: FinanceCategory.OTHER,
+    category: 'Outros',
     description: 'Entrada Projeto',
     amount: 40000.00,
     dueDate: '2024-05-10',
@@ -312,7 +322,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
     workId: 'w1',
     entityId: 'u8', // Elétrica & Cia
     type: FinanceType.EXPENSE,
-    category: FinanceCategory.MATERIAL,
+    category: 'Material',
     description: 'Aço CA-50 10mm (Alerta)',
     amount: 1250.00,
     dueDate: getFutureDate(2), // Dynamically set to 2 days from now

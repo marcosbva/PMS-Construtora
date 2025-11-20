@@ -1,8 +1,7 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder, TaskStatusDefinition, TaskStatus, Material } from './types';
-import { MOCK_USERS, MOCK_WORKS, MOCK_TASKS, MOCK_FINANCE, MOCK_LOGS, MOCK_PROFILES, MOCK_ORDERS, DEFAULT_TASK_STATUSES, MOCK_MATERIALS } from './constants';
+import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder, TaskStatusDefinition, TaskStatus, Material, FinanceCategoryDefinition } from './types';
+import { MOCK_USERS, MOCK_WORKS, MOCK_TASKS, MOCK_FINANCE, MOCK_LOGS, MOCK_PROFILES, MOCK_ORDERS, DEFAULT_TASK_STATUSES, MOCK_MATERIALS, DEFAULT_FINANCE_CATEGORIES } from './constants';
 import { KanbanBoard } from './components/KanbanBoard';
 import { FinanceView } from './components/FinanceView';
 import { DailyLogView } from './components/DailyLog';
@@ -19,7 +18,7 @@ const App: React.FC = () => {
   
   // Navigation State
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'WORKS' | 'HISTORY' | 'FINANCE' | 'REGISTRATIONS' | 'ALL_TASKS' | 'MATERIALS'>('DASHBOARD');
-  const [registrationSubTab, setRegistrationSubTab] = useState<'HUB' | 'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'MATERIALS' | 'SETTINGS'>('HUB');
+  const [registrationSubTab, setRegistrationSubTab] = useState<'HUB' | 'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'MATERIALS' | 'SETTINGS' | 'FINANCE_CATEGORIES'>('HUB');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   
   // Data State (Simulating DB)
@@ -32,6 +31,7 @@ const App: React.FC = () => {
   const [orders, setOrders] = useState<MaterialOrder[]>(MOCK_ORDERS);
   const [materials, setMaterials] = useState<Material[]>(MOCK_MATERIALS);
   const [taskStatuses, setTaskStatuses] = useState<TaskStatusDefinition[]>(DEFAULT_TASK_STATUSES);
+  const [financeCategories, setFinanceCategories] = useState<FinanceCategoryDefinition[]>(DEFAULT_FINANCE_CATEGORIES);
 
   // Work Detail Tab State
   const [workTab, setWorkTab] = useState<'OVERVIEW' | 'KANBAN' | 'FINANCE' | 'LOGS'>('OVERVIEW');
@@ -138,6 +138,21 @@ const App: React.FC = () => {
           paidDate: new Date().toISOString().split('T')[0]
       };
       handleUpdateFinanceRecord(updatedRecord);
+  };
+
+  // Finance Category Handlers
+  const handleAddCategory = (newCat: FinanceCategoryDefinition) => {
+    setFinanceCategories(prev => [...prev, newCat]);
+  };
+
+  const handleUpdateCategory = (updatedCat: FinanceCategoryDefinition) => {
+    setFinanceCategories(prev => prev.map(c => c.id === updatedCat.id ? updatedCat : c));
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    if (window.confirm('Tem certeza que deseja excluir esta categoria? Lançamentos antigos manterão o nome, mas não será possível selecionar novamente.')) {
+      setFinanceCategories(prev => prev.filter(c => c.id !== id));
+    }
   };
 
   // User Management Handlers
@@ -626,7 +641,8 @@ const App: React.FC = () => {
                            registrationSubTab === 'CLIENTS' ? 'Gestão de Clientes' : 
                            registrationSubTab === 'SUPPLIERS' ? 'Gestão de Fornecedores' : 
                            registrationSubTab === 'PROFILES' ? 'Perfis de Acesso' : 
-                           registrationSubTab === 'MATERIALS' ? 'Catálogo de Materiais' : 'Configurações do Sistema'}
+                           registrationSubTab === 'MATERIALS' ? 'Catálogo de Materiais' : 
+                           registrationSubTab === 'FINANCE_CATEGORIES' ? 'Categorias Financeiras' : 'Configurações do Sistema'}
                       </h2>
                   </div>
                   <div className="flex-1 overflow-y-auto">
@@ -637,6 +653,7 @@ const App: React.FC = () => {
                         orders={orders}
                         initialTab={registrationSubTab}
                         taskStatuses={taskStatuses}
+                        financeCategories={financeCategories}
                         onAddUser={handleAddUser}
                         onUpdateUser={handleUpdateUser}
                         onDeleteUser={handleDeleteUser}
@@ -647,6 +664,9 @@ const App: React.FC = () => {
                         onAddMaterial={handleAddMaterial}
                         onUpdateMaterial={handleUpdateMaterial}
                         onDeleteMaterial={handleDeleteMaterial}
+                        onAddCategory={handleAddCategory}
+                        onUpdateCategory={handleUpdateCategory}
+                        onDeleteCategory={handleDeleteCategory}
                     />
                   </div>
               </div>
@@ -734,6 +754,22 @@ const App: React.FC = () => {
                     </button>
                   )}
                   
+                  {/* Finance Categories */}
+                  {hasPermission('manageFinance') && (
+                      <button 
+                        onClick={() => setRegistrationSubTab('FINANCE_CATEGORIES')}
+                        className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
+                      >
+                          <div className="w-16 h-16 rounded-full bg-teal-50 text-teal-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                              <Wallet size={32} />
+                          </div>
+                          <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-teal-600 transition-colors">Categorias Financeiras</h3>
+                          <span className="text-xs font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                              {financeCategories.length} Tipos
+                          </span>
+                      </button>
+                  )}
+
                   {/* Settings / Statuses */}
                   <button 
                     onClick={() => setRegistrationSubTab('SETTINGS')}
@@ -956,9 +992,11 @@ const App: React.FC = () => {
                         currentUser={currentUser}
                         users={users} // Pass Users for Supplier linking
                         work={selectedWork}
+                        financeCategories={financeCategories}
                         onAddRecord={handleAddFinanceRecord}
                         onUpdateRecord={handleUpdateFinanceRecord}
                         onDeleteRecord={handleDeleteFinanceRecord}
+                        onAddCategory={handleAddCategory}
                     />
                 </div>
             )}
@@ -1150,9 +1188,11 @@ const App: React.FC = () => {
                             records={finance} 
                             currentUser={currentUser}
                             users={users} // Pass users
+                            financeCategories={financeCategories}
                             onAddRecord={handleAddFinanceRecord}
                             onUpdateRecord={handleUpdateFinanceRecord}
                             onDeleteRecord={handleDeleteFinanceRecord}
+                            onAddCategory={handleAddCategory}
                         />
                     </div>
                 )}

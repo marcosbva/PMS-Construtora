@@ -114,12 +114,13 @@ export enum FinanceType {
   INCOME = 'Receber'
 }
 
-export enum FinanceCategory {
-  MATERIAL = 'Material',
-  LABOR = 'Mão de Obra',
-  FEE = 'Honorário',
-  TAX = 'Imposto',
-  OTHER = 'Outros'
+// Changed to simple string to allow dynamic creation
+export type FinanceCategory = string;
+
+export interface FinanceCategoryDefinition {
+  id: string;
+  name: string;
+  type: 'EXPENSE' | 'INCOME' | 'BOTH';
 }
 
 export interface FinancialRecord {
@@ -128,7 +129,7 @@ export interface FinancialRecord {
   entityId?: string; // ID of the Supplier or Client associated
   type: FinanceType;
   description: string;
-  category: FinanceCategory;
+  category: string; // Changed from enum to string
   amount: number;
   dueDate: string;
   paidDate?: string; // If present, it's paid

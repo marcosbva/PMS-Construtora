@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, UserProfile, AppPermissions, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp } from 'lucide-react';
+import { User, UserProfile, AppPermissions, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition } from '../types';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag } from 'lucide-react';
 
 interface UserManagementProps {
   users: User[];
   profiles: UserProfile[];
   materials: Material[];
   orders?: MaterialOrder[];
-  initialTab?: 'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'SETTINGS' | 'MATERIALS';
+  initialTab?: 'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'SETTINGS' | 'MATERIALS' | 'FINANCE_CATEGORIES';
   taskStatuses: TaskStatusDefinition[];
+  financeCategories?: FinanceCategoryDefinition[];
   onAddUser: (user: User) => void;
   onUpdateUser: (user: User) => void;
   onDeleteUser: (userId: string) => void;
@@ -20,16 +21,21 @@ interface UserManagementProps {
   onAddMaterial: (material: Material) => void;
   onUpdateMaterial: (material: Material) => void;
   onDeleteMaterial: (materialId: string) => void;
+  onAddCategory?: (category: FinanceCategoryDefinition) => void;
+  onUpdateCategory?: (category: FinanceCategoryDefinition) => void;
+  onDeleteCategory?: (categoryId: string) => void;
 }
 
 export const UserManagement: React.FC<UserManagementProps> = ({ 
     users, profiles, materials, orders = [], initialTab = 'EMPLOYEES', taskStatuses,
+    financeCategories = [],
     onAddUser, onUpdateUser, onDeleteUser,
     onAddProfile, onUpdateProfile, onDeleteProfile,
     onUpdateStatuses,
-    onAddMaterial, onUpdateMaterial, onDeleteMaterial
+    onAddMaterial, onUpdateMaterial, onDeleteMaterial,
+    onAddCategory, onUpdateCategory, onDeleteCategory
 }) => {
-  const [activeTab, setActiveTab] = useState<'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'SETTINGS' | 'MATERIALS'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'SETTINGS' | 'MATERIALS' | 'FINANCE_CATEGORIES'>(initialTab);
   
   useEffect(() => {
       if (initialTab) setActiveTab(initialTab);
@@ -39,12 +45,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   
   // Editing State
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingProfile, setEditingProfile] = useState<UserProfile | null>(null);
   const [editingStatus, setEditingStatus] = useState<TaskStatusDefinition | null>(null);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
+  const [editingCategory, setEditingCategory] = useState<FinanceCategoryDefinition | null>(null);
 
   // --- USER FORM STATE ---
   const [userName, setUserName] = useState('');
@@ -83,6 +91,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [materialPrice, setMaterialPrice] = useState('');
   const [materialDesc, setMaterialDesc] = useState('');
 
+  // --- FINANCE CATEGORY FORM STATE ---
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryType, setCategoryType] = useState<'EXPENSE' | 'INCOME' | 'BOTH'>('BOTH');
+
   // --- HELPERS ---
   const getCategoryLabel = (tab: string) => {
       switch(tab) {
@@ -90,12 +102,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           case 'CLIENTS': return 'Clientes';
           case 'SUPPLIERS': return 'Fornecedores';
           case 'MATERIALS': return 'Materiais';
+          case 'FINANCE_CATEGORIES': return 'Categorias Financeiras';
           default: return '';
       }
   };
 
   const getFilteredUsers = () => {
-      if (activeTab === 'PROFILES' || activeTab === 'SETTINGS' || activeTab === 'MATERIALS') return [];
+      if (activeTab === 'PROFILES' || activeTab === 'SETTINGS' || activeTab === 'MATERIALS' || activeTab === 'FINANCE_CATEGORIES') return [];
       const categoryMap: Record<string, UserCategory> = {
           'EMPLOYEES': 'EMPLOYEE',
           'CLIENTS': 'CLIENT',
@@ -356,6 +369,38 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     setIsMaterialModalOpen(false);
   };
 
+  // --- HANDLERS: FINANCE CATEGORIES ---
+  const openCategoryModal = (cat?: FinanceCategoryDefinition) => {
+      if (cat) {
+          setEditingCategory(cat);
+          setCategoryName(cat.name);
+          setCategoryType(cat.type);
+      } else {
+          setEditingCategory(null);
+          setCategoryName('');
+          setCategoryType('BOTH');
+      }
+      setIsCategoryModalOpen(true);
+  };
+
+  const saveCategory = () => {
+      if (!categoryName || !onAddCategory || !onUpdateCategory) return;
+
+      const catData: FinanceCategoryDefinition = {
+          id: editingCategory ? editingCategory.id : `cat_${Math.random().toString(36).substr(2, 9)}`,
+          name: categoryName,
+          type: categoryType
+      };
+
+      if (editingCategory) {
+          onUpdateCategory(catData);
+      } else {
+          onAddCategory(catData);
+      }
+      setIsCategoryModalOpen(false);
+  };
+
+
   return (
     <div className="p-6 max-w-6xl mx-auto min-h-screen">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
@@ -370,12 +415,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             onClick={() => {
                 if (activeTab === 'PROFILES') openProfileModal();
                 else if (activeTab === 'MATERIALS') openMaterialModal();
+                else if (activeTab === 'FINANCE_CATEGORIES') openCategoryModal();
                 else openUserModal();
             }}
             className="bg-pms-600 hover:bg-pms-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all"
           >
             <Plus size={20} />
-            {activeTab === 'PROFILES' ? 'Novo Perfil' : activeTab === 'MATERIALS' ? 'Novo Material' : `Novo ${getCategoryLabel(activeTab).slice(0, -1)}`}
+            {activeTab === 'PROFILES' ? 'Novo Perfil' : activeTab === 'MATERIALS' ? 'Novo Material' : activeTab === 'FINANCE_CATEGORIES' ? 'Nova Categoria' : `Novo ${getCategoryLabel(activeTab).slice(0, -1)}`}
           </button>
         )}
       </div>
@@ -386,6 +432,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           <TabButton active={activeTab === 'CLIENTS'} onClick={() => setActiveTab('CLIENTS')} icon={<Contact size={18}/>} label="Clientes" />
           <TabButton active={activeTab === 'SUPPLIERS'} onClick={() => setActiveTab('SUPPLIERS')} icon={<Truck size={18}/>} label="Fornecedores" />
           <TabButton active={activeTab === 'MATERIALS'} onClick={() => setActiveTab('MATERIALS')} icon={<Package size={18}/>} label="Materiais" />
+          <TabButton active={activeTab === 'FINANCE_CATEGORIES'} onClick={() => setActiveTab('FINANCE_CATEGORIES')} icon={<Wallet size={18}/>} label="Categorias Financeiras" />
           <TabButton active={activeTab === 'PROFILES'} onClick={() => setActiveTab('PROFILES')} icon={<Shield size={18}/>} label="Perfis de Acesso" />
           <TabButton active={activeTab === 'SETTINGS'} onClick={() => setActiveTab('SETTINGS')} icon={<Settings size={18}/>} label="Configurações" />
       </div>
@@ -555,6 +602,67 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             </tbody>
             </table>
             </div>
+        </div>
+      )}
+
+      {/* --- FINANCE CATEGORIES TAB --- */}
+      {activeTab === 'FINANCE_CATEGORIES' && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+            <table className="w-full text-left border-collapse">
+            <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-xs uppercase text-slate-500 font-bold">
+                <th className="px-6 py-4">Nome da Categoria</th>
+                <th className="px-6 py-4">Uso Preferencial</th>
+                <th className="px-6 py-4 text-right">Ações</th>
+                </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+                {financeCategories.map((cat) => (
+                    <tr key={cat.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                                <Tag size={16} className="text-slate-400" />
+                                <span className="font-bold text-slate-800">{cat.name}</span>
+                            </div>
+                        </td>
+                        <td className="px-6 py-4">
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                cat.type === 'EXPENSE' ? 'bg-red-50 text-red-600 border border-red-100' : 
+                                cat.type === 'INCOME' ? 'bg-green-50 text-green-600 border border-green-100' :
+                                'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                                {cat.type === 'EXPENSE' ? 'Despesa' : cat.type === 'INCOME' ? 'Receita' : 'Ambos'}
+                            </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                            <div className="flex justify-end gap-2">
+                            <button 
+                                onClick={() => openCategoryModal(cat)}
+                                className="p-2 text-slate-400 hover:text-pms-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Editar"
+                            >
+                                <Edit2 size={18} />
+                            </button>
+                            <button 
+                                onClick={() => onDeleteCategory && onDeleteCategory(cat.id)}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Excluir"
+                            >
+                                <Trash2 size={18} />
+                            </button>
+                            </div>
+                        </td>
+                    </tr>
+                ))}
+                {financeCategories.length === 0 && (
+                    <tr>
+                        <td colSpan={3} className="px-6 py-8 text-center text-slate-400">
+                            Nenhuma categoria cadastrada.
+                        </td>
+                    </tr>
+                )}
+            </tbody>
+            </table>
         </div>
       )}
 
@@ -1023,6 +1131,69 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                  </button>
                  <button onClick={saveMaterial} className="px-4 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 font-bold shadow-md">
                     {editingMaterial ? 'Salvar' : 'Cadastrar'}
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* --- CATEGORY MODAL --- */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+           <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+              <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-2">
+                 <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <Wallet size={20} className="text-pms-600"/>
+                    {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
+                 </h3>
+                 <button onClick={() => setIsCategoryModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                    <X size={24} />
+                 </button>
+              </div>
+
+              <div className="space-y-4">
+                  <div>
+                     <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Categoria</label>
+                     <input 
+                        type="text" 
+                        placeholder="Ex: Combustível, Alimentação..."
+                        className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
+                        value={categoryName}
+                        onChange={(e) => setCategoryName(e.target.value)}
+                     />
+                  </div>
+
+                  <div>
+                     <label className="block text-sm font-bold text-slate-700 mb-1">Uso Preferencial</label>
+                     <div className="grid grid-cols-3 gap-2">
+                        <button 
+                            onClick={() => setCategoryType('EXPENSE')}
+                            className={`text-xs font-bold py-2 rounded border transition-all ${categoryType === 'EXPENSE' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >
+                            Despesa
+                        </button>
+                        <button 
+                            onClick={() => setCategoryType('INCOME')}
+                            className={`text-xs font-bold py-2 rounded border transition-all ${categoryType === 'INCOME' ? 'bg-green-50 text-green-600 border-green-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >
+                            Receita
+                        </button>
+                        <button 
+                            onClick={() => setCategoryType('BOTH')}
+                            className={`text-xs font-bold py-2 rounded border transition-all ${categoryType === 'BOTH' ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-white text-slate-500 border-slate-200'}`}
+                        >
+                            Ambos
+                        </button>
+                     </div>
+                  </div>
+              </div>
+
+              <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
+                 <button onClick={() => setIsCategoryModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                    Cancelar
+                 </button>
+                 <button onClick={saveCategory} className="px-4 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 font-bold shadow-md">
+                    Salvar
                  </button>
               </div>
            </div>

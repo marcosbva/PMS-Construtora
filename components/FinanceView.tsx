@@ -1,24 +1,32 @@
 
-
-import React, { useMemo, useState } from 'react';
-import { FinancialRecord, FinanceType, FinanceCategory, User, UserRole, ConstructionWork } from '../types';
+import React, { useMemo, useState, useRef } from 'react';
+import { FinancialRecord, FinanceType, User, UserRole, ConstructionWork, FinanceCategoryDefinition } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from 'recharts';
-import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon, Filter, ArrowDown, Plus } from 'lucide-react';
 
 interface FinanceViewProps {
   records: FinancialRecord[];
   currentUser: User;
   users: User[]; // To look up Supplier names
   work?: ConstructionWork; // If null, global view
+  financeCategories?: FinanceCategoryDefinition[];
   onAddRecord: (record: FinancialRecord) => void;
   onUpdateRecord?: (record: FinancialRecord) => void;
   onDeleteRecord?: (recordId: string) => void;
+  onAddCategory?: (category: FinanceCategoryDefinition) => void;
 }
 
-const COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e'];
+const COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308', '#ec4899', '#6366f1'];
 
-export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, users, work, onAddRecord, onUpdateRecord, onDeleteRecord }) => {
+export const FinanceView: React.FC<FinanceViewProps> = ({ 
+    records, currentUser, users, work, financeCategories = [],
+    onAddRecord, onUpdateRecord, onDeleteRecord, onAddCategory 
+}) => {
   const isGlobal = !work;
+  const detailsTableRef = useRef<HTMLDivElement>(null);
+
+  // Filter State
+  const [viewFilter, setViewFilter] = useState<'ALL' | 'EXPENSE' | 'INCOME' | 'PENDING'>('ALL');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,12 +34,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
   
   // Form State
   const [type, setType] = useState<FinanceType>(FinanceType.EXPENSE);
-  const [category, setCategory] = useState<FinanceCategory>(FinanceCategory.MATERIAL);
+  const [category, setCategory] = useState<string>('Material');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [status, setStatus] = useState<'Pendente' | 'Pago' | 'Atrasado'>('Pendente');
   const [selectedEntityId, setSelectedEntityId] = useState(''); // Supplier or Client ID
+  
+  // Quick Category Add State
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   // Permission Check
   if (currentUser.role === UserRole.MASTER) {
@@ -99,8 +111,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   }, [records]);
 
+  // --- LOGIC: DETAILED FILTERED LIST ---
+  const filteredDetailedRecords = useMemo(() => {
+      let filtered = records;
+
+      if (viewFilter === 'EXPENSE') {
+          filtered = records.filter(r => r.type === FinanceType.EXPENSE);
+      } else if (viewFilter === 'INCOME') {
+          filtered = records.filter(r => r.type === FinanceType.INCOME);
+      } else if (viewFilter === 'PENDING') {
+          // "A Pagar" usually refers to Expenses, but technically can be any pending.
+          // Based on the card "A Pagar", we usually mean Expenses.
+          filtered = records.filter(r => r.status === 'Pendente' && r.type === FinanceType.EXPENSE);
+      }
+
+      return filtered.sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+  }, [records, viewFilter]);
+
 
   const handleOpenModal = (record?: FinancialRecord) => {
+    setIsAddingCategory(false);
+    setNewCategoryName('');
+    
     if (record) {
         setEditingId(record.id);
         setType(record.type);
@@ -117,7 +149,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
         setAmount('');
         setDueDate('');
         setStatus('Pendente');
-        setCategory(FinanceCategory.MATERIAL);
+        setCategory(financeCategories[0]?.name || 'Material');
         setSelectedEntityId('');
     }
     setIsModalOpen(true);
@@ -157,6 +189,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
           });
       }
   }
+  
+  const handleSaveNewCategory = () => {
+      if (!newCategoryName || !onAddCategory) return;
+      
+      const newCat: FinanceCategoryDefinition = {
+          id: `cat_${Date.now()}`,
+          name: newCategoryName,
+          type: 'BOTH'
+      };
+      onAddCategory(newCat);
+      setCategory(newCategoryName); // Auto select
+      setIsAddingCategory(false);
+      setNewCategoryName('');
+  };
+
+  const handleCardClick = (filter: 'EXPENSE' | 'INCOME' | 'PENDING') => {
+      setViewFilter(filter);
+      // Small delay to ensure render, then scroll
+      setTimeout(() => {
+          detailsTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+  };
 
   return (
     <div className="space-y-8 pb-10 relative">
@@ -180,33 +234,54 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
         </div>
       </div>
 
-      {/* Summary Cards - General */}
+      {/* Summary Cards - Interactive */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-          <div className="absolute right-0 top-0 h-full w-1 bg-red-500"></div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-red-100 rounded-lg text-red-600"><TrendingDown size={20}/></div>
-            <span className="text-sm text-slate-500 font-medium">Total Despesas</span>
+        <div 
+            onClick={() => handleCardClick('EXPENSE')}
+            className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all"
+        >
+          <div className="absolute right-0 top-0 h-full w-1 bg-red-500 group-hover:w-2 transition-all"></div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg text-red-600"><TrendingDown size={20}/></div>
+                <span className="text-sm text-slate-500 font-medium group-hover:text-red-600 transition-colors">Total Despesas</span>
+            </div>
+            <ArrowDown size={16} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity -rotate-45" />
           </div>
           <p className="text-2xl font-bold text-slate-800">R$ {totals.expenses.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-slate-400 mt-1">Clique para ver lista detalhada</p>
         </div>
         
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-           <div className="absolute right-0 top-0 h-full w-1 bg-green-500"></div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-green-100 rounded-lg text-green-600"><TrendingUp size={20}/></div>
-            <span className="text-sm text-slate-500 font-medium">Total Receitas</span>
+        <div 
+            onClick={() => handleCardClick('INCOME')}
+            className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all"
+        >
+           <div className="absolute right-0 top-0 h-full w-1 bg-green-500 group-hover:w-2 transition-all"></div>
+           <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-green-100 rounded-lg text-green-600"><TrendingUp size={20}/></div>
+                    <span className="text-sm text-slate-500 font-medium group-hover:text-green-600 transition-colors">Total Receitas</span>
+                </div>
+                <ArrowDown size={16} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity -rotate-45" />
           </div>
           <p className="text-2xl font-bold text-slate-800">R$ {totals.income.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-slate-400 mt-1">Clique para ver lista detalhada</p>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
-           <div className="absolute right-0 top-0 h-full w-1 bg-orange-400"></div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-orange-100 rounded-lg text-orange-600"><AlertTriangle size={20}/></div>
-            <span className="text-sm text-slate-500 font-medium">A Pagar (Pendente)</span>
+        <div 
+            onClick={() => handleCardClick('PENDING')}
+            className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all"
+        >
+           <div className="absolute right-0 top-0 h-full w-1 bg-orange-400 group-hover:w-2 transition-all"></div>
+           <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-lg text-orange-600"><AlertTriangle size={20}/></div>
+                    <span className="text-sm text-slate-500 font-medium group-hover:text-orange-600 transition-colors">A Pagar (Pendente)</span>
+                </div>
+                <ArrowDown size={16} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity -rotate-45" />
           </div>
           <p className="text-2xl font-bold text-slate-800">R$ {totals.pendingExpense.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-slate-400 mt-1">Clique para ver lista detalhada</p>
         </div>
       </div>
 
@@ -311,7 +386,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
         </div>
       </div>
 
-      {/* 2. OPEN INVOICES TABLE (New Section) */}
+      {/* 2. OPEN INVOICES TABLE */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden border-l-4 border-l-orange-400">
           <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
              <div>
@@ -319,7 +394,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
                     <Clock size={20} className="text-orange-500"/>
                     Boletos e Contas em Aberto
                 </h3>
-                <p className="text-xs text-slate-500 mt-1">Lista de pendências financeiras (pagas não aparecem aqui).</p>
+                <p className="text-xs text-slate-500 mt-1">Lista rápida de pendências.</p>
              </div>
              <span className="bg-orange-100 text-orange-800 text-xs font-bold px-2 py-1 rounded-full">
                  {openInvoices.length} Pendentes
@@ -335,7 +410,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
                           <th className="px-6 py-3">Vencimento</th>
                           <th className="px-6 py-3">Valor</th>
                           <th className="px-6 py-3">Status</th>
-                          {!isGlobal && <th className="px-6 py-3 text-right">Ações</th>}
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -351,7 +425,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
                                 </td>
                                 <td className="px-6 py-4 text-slate-600">
                                     {record.description}
-                                    <div className="text-[10px] text-slate-400 uppercase mt-0.5">{record.category}</div>
                                 </td>
                                 <td className="px-6 py-4">
                                     <div className={`flex items-center gap-2 ${isOverdue ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
@@ -370,44 +443,148 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
                                         {isOverdue ? 'Atrasado' : record.status}
                                     </span>
                                 </td>
-                                {!isGlobal && (
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            {/* Pay Button */}
-                                            <button 
-                                                onClick={() => quickPay(record)}
-                                                className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded shadow-sm flex items-center gap-1 transition-colors"
-                                                title="Dar Baixa (Pago)"
-                                            >
-                                                <CheckCircle2 size={12} /> Baixar
-                                            </button>
-                                            <button 
-                                                onClick={() => handleOpenModal(record)}
-                                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                                title="Editar"
-                                            >
-                                                <Edit2 size={16} />
-                                            </button>
-                                            {onDeleteRecord && (
-                                                <button 
-                                                    onClick={() => onDeleteRecord(record.id)}
-                                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                    title="Excluir"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </td>
-                                )}
                             </tr>
                           );
                       })}
                       {openInvoices.length === 0 && (
                           <tr>
-                              <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                              <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
                                   <CheckCircle2 size={32} className="mx-auto mb-2 text-green-500 opacity-50" />
                                   Tudo em dia! Nenhuma conta em aberto.
+                              </td>
+                          </tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      </div>
+
+      {/* 3. DETAILED TRANSACTION LIST (Filterable & Scroll Target) */}
+      <div ref={detailsTableRef} className="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden scroll-mt-20">
+          <div className="px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row justify-between md:items-center gap-4 bg-slate-50/50">
+             <div>
+                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                    <FileText size={20} className="text-pms-600"/>
+                    Registros Detalhados
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                    {viewFilter === 'ALL' && 'Todos os lançamentos'}
+                    {viewFilter === 'EXPENSE' && 'Listando todas as despesas'}
+                    {viewFilter === 'INCOME' && 'Listando todas as receitas'}
+                    {viewFilter === 'PENDING' && 'Listando apenas pendências (A Pagar)'}
+                </p>
+             </div>
+
+             <div className="flex items-center gap-2">
+                <Filter size={16} className="text-slate-400" />
+                <select 
+                    className="bg-white border border-slate-300 rounded-lg py-1.5 px-3 text-sm outline-none focus:ring-2 focus:ring-pms-500"
+                    value={viewFilter}
+                    onChange={(e) => setViewFilter(e.target.value as any)}
+                >
+                    <option value="ALL">Todos os Tipos</option>
+                    <option value="EXPENSE">Apenas Despesas</option>
+                    <option value="INCOME">Apenas Receitas</option>
+                    <option value="PENDING">Pendentes (A Pagar)</option>
+                </select>
+             </div>
+          </div>
+
+          <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-slate-500 uppercase bg-slate-50">
+                      <tr>
+                          <th className="px-6 py-4">Vencimento</th>
+                          <th className="px-6 py-4">Descrição / Entidade</th>
+                          <th className="px-6 py-4">Categoria</th>
+                          <th className="px-6 py-4">Valor</th>
+                          <th className="px-6 py-4">Status</th>
+                          {!isGlobal && <th className="px-6 py-4 text-right">Ações</th>}
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                      {filteredDetailedRecords.map(record => {
+                           const entity = users.find(u => u.id === record.entityId);
+                           const name = entity ? entity.name : (record.entityId ? 'Desconhecido' : 'Geral');
+                           const isOverdue = new Date(record.dueDate) < new Date() && record.status !== 'Pago';
+
+                           return (
+                               <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                                   <td className="px-6 py-4">
+                                       <div className="flex flex-col">
+                                           <span className={`font-bold ${isOverdue ? 'text-red-600' : 'text-slate-700'}`}>
+                                               {new Date(record.dueDate).toLocaleDateString('pt-BR')}
+                                           </span>
+                                           {record.paidDate && (
+                                               <span className="text-[10px] text-green-600 flex items-center gap-1">
+                                                   <CheckCircle2 size={10} /> Pago: {new Date(record.paidDate).toLocaleDateString('pt-BR')}
+                                               </span>
+                                           )}
+                                       </div>
+                                   </td>
+                                   <td className="px-6 py-4">
+                                       <div className="font-bold text-slate-800">{record.description}</div>
+                                       <div className="text-xs text-slate-500 flex items-center gap-1">
+                                           <UserIcon size={10}/> {name}
+                                       </div>
+                                   </td>
+                                   <td className="px-6 py-4">
+                                       <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">
+                                           {record.category}
+                                       </span>
+                                   </td>
+                                   <td className="px-6 py-4">
+                                       <span className={`font-bold ${record.type === FinanceType.INCOME ? 'text-green-600' : 'text-red-600'}`}>
+                                           {record.type === FinanceType.INCOME ? '+' : '-'} R$ {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                       </span>
+                                   </td>
+                                   <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                            record.status === 'Pago' ? 'bg-green-100 text-green-700' :
+                                            (record.status === 'Atrasado' || isOverdue) ? 'bg-red-100 text-red-700' : 
+                                            'bg-yellow-100 text-yellow-700'
+                                        }`}>
+                                            {isOverdue && record.status !== 'Atrasado' ? 'Atrasado' : record.status}
+                                        </span>
+                                   </td>
+                                   {!isGlobal && (
+                                       <td className="px-6 py-4 text-right">
+                                           <div className="flex justify-end gap-2">
+                                               {record.status !== 'Pago' && (
+                                                   <button 
+                                                       onClick={() => quickPay(record)}
+                                                       className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                                                       title="Confirmar Pagamento"
+                                                   >
+                                                       <CheckCircle2 size={16} />
+                                                   </button>
+                                               )}
+                                               <button 
+                                                   onClick={() => handleOpenModal(record)}
+                                                   className="p-2 text-slate-400 hover:text-pms-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                   title="Editar"
+                                               >
+                                                   <Edit2 size={16} />
+                                               </button>
+                                               {onDeleteRecord && (
+                                                   <button 
+                                                       onClick={() => onDeleteRecord(record.id)}
+                                                       className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                       title="Excluir"
+                                                   >
+                                                       <Trash2 size={16} />
+                                                   </button>
+                                               )}
+                                           </div>
+                                       </td>
+                                   )}
+                               </tr>
+                           );
+                      })}
+                      {filteredDetailedRecords.length === 0 && (
+                          <tr>
+                              <td colSpan={6} className="px-6 py-10 text-center text-slate-400">
+                                  Nenhum registro encontrado para o filtro selecionado.
                               </td>
                           </tr>
                       )}
@@ -522,22 +699,56 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                    {/* Category */}
+                    {/* Category - Now Dynamic with Add Option */}
                     <div>
                        <label className="block text-sm font-bold text-slate-700 mb-1">Categoria</label>
-                       <div className="relative">
-                          <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                          <select 
-                             className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pms-500 outline-none bg-white"
-                             value={category}
-                             onChange={(e) => setCategory(e.target.value as FinanceCategory)}
-                          >
-                             {Object.values(FinanceCategory).map(c => (
-                                <option key={c} value={c}>{c}</option>
-                             ))}
-                          </select>
+                       <div className="flex gap-2">
+                           <div className="relative flex-1">
+                              <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                              <select 
+                                 className="w-full pl-10 pr-2 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                                 value={category}
+                                 onChange={(e) => setCategory(e.target.value)}
+                              >
+                                 {financeCategories.map(c => (
+                                    <option key={c.id} value={c.name}>{c.name}</option>
+                                 ))}
+                              </select>
+                           </div>
+                           {onAddCategory && (
+                               <button 
+                                   onClick={() => setIsAddingCategory(!isAddingCategory)}
+                                   className={`px-2 rounded-lg border transition-colors ${isAddingCategory ? 'bg-slate-800 text-white border-slate-800' : 'border-slate-300 text-slate-500 hover:bg-slate-100'}`}
+                                   title="Criar nova categoria"
+                               >
+                                   <Plus size={18} />
+                               </button>
+                           )}
                        </div>
+                       
+                       {/* Inline Category Creation */}
+                       {isAddingCategory && (
+                           <div className="mt-2 p-2 bg-slate-50 rounded-lg border border-slate-200 animate-in fade-in slide-in-from-top-1">
+                               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nova Categoria</label>
+                               <div className="flex gap-2">
+                                   <input 
+                                       type="text"
+                                       placeholder="Nome..."
+                                       className="flex-1 px-2 py-1 text-sm border border-slate-300 rounded"
+                                       value={newCategoryName}
+                                       onChange={(e) => setNewCategoryName(e.target.value)}
+                                   />
+                                   <button 
+                                       onClick={handleSaveNewCategory}
+                                       className="bg-pms-600 text-white text-xs font-bold px-2 rounded hover:bg-pms-500"
+                                   >
+                                       OK
+                                   </button>
+                               </div>
+                           </div>
+                       )}
                     </div>
+
                     {/* Status */}
                     <div>
                        <label className="block text-sm font-bold text-slate-700 mb-1">Status</label>
