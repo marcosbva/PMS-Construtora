@@ -1,12 +1,14 @@
 
+
 import React, { useMemo, useState } from 'react';
 import { FinancialRecord, FinanceType, FinanceCategory, User, UserRole, ConstructionWork } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from 'recharts';
-import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon } from 'lucide-react';
 
 interface FinanceViewProps {
   records: FinancialRecord[];
   currentUser: User;
+  users: User[]; // To look up Supplier names
   work?: ConstructionWork; // If null, global view
   onAddRecord: (record: FinancialRecord) => void;
   onUpdateRecord?: (record: FinancialRecord) => void;
@@ -15,7 +17,7 @@ interface FinanceViewProps {
 
 const COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e'];
 
-export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, work, onAddRecord, onUpdateRecord, onDeleteRecord }) => {
+export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, users, work, onAddRecord, onUpdateRecord, onDeleteRecord }) => {
   const isGlobal = !work;
 
   // Modal State
@@ -29,6 +31,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [status, setStatus] = useState<'Pendente' | 'Pago' | 'Atrasado'>('Pendente');
+  const [selectedEntityId, setSelectedEntityId] = useState(''); // Supplier or Client ID
 
   // Permission Check
   if (currentUser.role === UserRole.MASTER) {
@@ -64,25 +67,38 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
     return Object.keys(categoryMap).map(key => ({ name: key, value: categoryMap[key] }));
   }, [records]);
 
-  // 15-Day Forecast (Income + Expenses)
-  const upcomingSchedule = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const limitDate = new Date(today);
-    limitDate.setDate(today.getDate() + 15);
+  // --- LOGIC CHANGE: AGGREGATE BY SUPPLIER ---
+  const financialSummary = useMemo(() => {
+      const summary: Record<string, { entityName: string, type: FinanceType, paid: number, pending: number, total: number }> = {};
 
-    return records
-        .filter(r => {
-            if (r.status !== 'Pendente') return false;
-            // Manual parsing to avoid timezone shifts
-            const [y, m, d] = r.dueDate.split('-').map(Number);
-            const rDate = new Date(y, m - 1, d);
-            
-            return rDate >= today && rDate <= limitDate;
-        })
+      records.forEach(record => {
+          // If we don't have an entity ID, try to use description or fallback
+          const key = record.entityId || record.description; 
+          const user = users.find(u => u.id === record.entityId);
+          const name = user ? user.name : (record.entityId ? 'Fornecedor Desconhecido' : record.description); // Fallback to desc if no ID
+
+          if (!summary[key]) {
+              summary[key] = { entityName: name, type: record.type, paid: 0, pending: 0, total: 0 };
+          }
+
+          summary[key].total += record.amount;
+          if (record.status === 'Pago') {
+              summary[key].paid += record.amount;
+          } else {
+              summary[key].pending += record.amount;
+          }
+      });
+
+      return Object.values(summary);
+  }, [records, users]);
+
+  // --- LOGIC CHANGE: OPEN INVOICES ONLY ---
+  const openInvoices = useMemo(() => {
+      return records
+        .filter(r => r.status !== 'Pago')
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   }, [records]);
+
 
   const handleOpenModal = (record?: FinancialRecord) => {
     if (record) {
@@ -93,6 +109,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
         setAmount(record.amount.toString());
         setDueDate(record.dueDate);
         setStatus(record.status as any);
+        setSelectedEntityId(record.entityId || '');
     } else {
         setEditingId(null);
         setType(FinanceType.EXPENSE);
@@ -101,6 +118,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
         setDueDate('');
         setStatus('Pendente');
         setCategory(FinanceCategory.MATERIAL);
+        setSelectedEntityId('');
     }
     setIsModalOpen(true);
   };
@@ -111,6 +129,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
     const recordData: FinancialRecord = {
       id: editingId || Math.random().toString(36).substr(2, 9),
       workId: work.id,
+      entityId: selectedEntityId || undefined,
       type,
       category,
       description,
@@ -129,8 +148,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
     setIsModalOpen(false);
   };
 
+  const quickPay = (record: FinancialRecord) => {
+      if (onUpdateRecord) {
+          onUpdateRecord({
+              ...record,
+              status: 'Pago',
+              paidDate: new Date().toISOString().split('T')[0]
+          });
+      }
+  }
+
   return (
-    <div className="space-y-6 pb-10 relative">
+    <div className="space-y-8 pb-10 relative">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <h2 className="text-xl font-bold text-slate-800">
@@ -232,138 +261,165 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
         </div>
       </div>
 
-      {/* Transaction List */}
+      {/* 1. SUMMARY TABLE (Replacing Detailed List) */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100">
-          <h3 className="font-bold text-slate-800">Lançamentos Detalhados</h3>
+          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              <Tag size={20} className="text-pms-600"/>
+              Resumo por Fornecedor / Cliente
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">Consolidado de pagamentos realizados e valores em aberto.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="text-xs text-slate-500 uppercase bg-slate-50">
               <tr>
-                <th className="px-6 py-3">Descrição</th>
-                <th className="px-6 py-3">Categoria</th>
-                <th className="px-6 py-3">Vencimento</th>
-                <th className="px-6 py-3">Valor</th>
-                <th className="px-6 py-3">Status</th>
-                {!isGlobal && <th className="px-6 py-3 text-right">Ações</th>}
+                <th className="px-6 py-3">Fornecedor / Cliente</th>
+                <th className="px-6 py-3">Tipo</th>
+                <th className="px-6 py-3 bg-green-50/50 text-green-700">Já Pago</th>
+                <th className="px-6 py-3 bg-orange-50/50 text-orange-700">Em Aberto (A Quitar)</th>
+                <th className="px-6 py-3 font-extrabold">Total Acumulado</th>
               </tr>
             </thead>
             <tbody>
-              {records.map(record => (
-                <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors group">
-                  <td className="px-6 py-4 font-medium text-slate-900">{record.description}</td>
+              {financialSummary.map((item, index) => (
+                <tr key={index} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4 font-bold text-slate-800">{item.entityName}</td>
                   <td className="px-6 py-4">
-                    <span className="px-2 py-1 bg-slate-100 rounded text-xs font-medium">{record.category}</span>
+                      <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${item.type === FinanceType.INCOME ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {item.type}
+                      </span>
                   </td>
-                  <td className="px-6 py-4 text-slate-500">{new Date(record.dueDate).toLocaleDateString('pt-BR')}</td>
-                  <td className={`px-6 py-4 font-bold ${record.type === FinanceType.INCOME ? 'text-green-600' : 'text-slate-700'}`}>
-                    {record.type === FinanceType.INCOME ? '+' : '-'} R$ {record.amount.toLocaleString('pt-BR')}
+                  <td className="px-6 py-4 text-green-600 font-medium bg-green-50/10">
+                    R$ {item.paid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                      record.status === 'Pago' ? 'bg-green-100 text-green-700' : 
-                      record.status === 'Atrasado' ? 'bg-red-100 text-red-700' : 
-                      'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {record.status}
-                    </span>
+                  <td className="px-6 py-4 text-orange-600 font-bold bg-orange-50/10">
+                    {item.pending > 0 ? `R$ ${item.pending.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-'}
                   </td>
-                  {!isGlobal && (
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                                onClick={() => handleOpenModal(record)}
-                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                title="Editar"
-                            >
-                                <Edit2 size={16} />
-                            </button>
-                            {onDeleteRecord && (
-                                <button 
-                                    onClick={() => onDeleteRecord(record.id)}
-                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                    title="Excluir"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            )}
-                        </div>
-                      </td>
-                  )}
+                  <td className="px-6 py-4 font-bold text-slate-900">
+                    R$ {item.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </td>
                 </tr>
               ))}
+              {financialSummary.length === 0 && (
+                  <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400">Nenhum registro financeiro encontrado.</td>
+                  </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* 15-Day Financial Forecast (Bottom Section) */}
-      <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden text-white">
-          <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-             <h3 className="font-bold flex items-center gap-2">
-                <Clock className="text-pms-500" size={20} />
-                Cronograma Financeiro (Próximos 15 Dias)
-             </h3>
-             <span className="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">Receitas e Despesas</span>
+      {/* 2. OPEN INVOICES TABLE (New Section) */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden border-l-4 border-l-orange-400">
+          <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+             <div>
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Clock size={20} className="text-orange-500"/>
+                    Boletos e Contas em Aberto
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">Lista de pendências financeiras (pagas não aparecem aqui).</p>
+             </div>
+             <span className="bg-orange-100 text-orange-800 text-xs font-bold px-2 py-1 rounded-full">
+                 {openInvoices.length} Pendentes
+             </span>
           </div>
           
-          {upcomingSchedule.length > 0 ? (
-             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {upcomingSchedule.map(record => {
-                   const isIncome = record.type === FinanceType.INCOME;
-                   const dateObj = new Date(record.dueDate);
-                   // Manual UTC fix adjustment for display if needed, but normally Date() treats string as UTC 00:00 if format yyyy-mm-dd
-                   const dayName = dateObj.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
-                   const dayNum = dateObj.getDate() + 1; // Correcting common off-by-one in JS parsing if strictly local
-                   const displayDate = new Date(record.dueDate.replace(/-/g, '/')); // Simple trick for browser compatibility
+          <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-slate-500 uppercase bg-slate-50">
+                      <tr>
+                          <th className="px-6 py-3">Beneficiário / Pagador</th>
+                          <th className="px-6 py-3">Descrição</th>
+                          <th className="px-6 py-3">Vencimento</th>
+                          <th className="px-6 py-3">Valor</th>
+                          <th className="px-6 py-3">Status</th>
+                          {!isGlobal && <th className="px-6 py-3 text-right">Ações</th>}
+                      </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                      {openInvoices.map(record => {
+                          const entity = users.find(u => u.id === record.entityId);
+                          const name = entity ? entity.name : (record.entityId ? 'Desconhecido' : 'Geral');
+                          const isOverdue = new Date(record.dueDate) < new Date() && record.status !== 'Pago';
 
-                   return (
-                    <div 
-                      key={record.id} 
-                      onClick={() => handleOpenModal(record)}
-                      className={`relative p-4 rounded-lg border cursor-pointer hover:bg-white/5 transition-colors ${
-                          isIncome ? 'border-green-500/30 bg-green-500/10' : 'border-red-500/30 bg-red-500/10'
-                      }`}
-                    >
-                        <div className={`absolute top-0 right-0 px-2 py-0.5 rounded-bl-lg text-[10px] font-bold uppercase ${
-                            isIncome ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-                        }`}>
-                           {isIncome ? 'Receita' : 'Despesa'}
-                        </div>
-                        
-                        <div className="flex gap-3 mb-2">
-                            <div className="bg-slate-900/50 rounded px-2 py-1 text-center min-w-[45px]">
-                                <span className="block text-[10px] text-slate-400 font-bold uppercase">{displayDate.toLocaleDateString('pt-BR', { weekday: 'short' }).slice(0,3)}</span>
-                                <span className="block text-lg font-bold leading-none">{displayDate.getDate()}</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-bold text-sm truncate text-slate-200" title={record.description}>{record.description}</p>
-                                <p className="text-xs text-slate-400">{record.category}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/10">
-                            <span className="text-xs text-slate-400">Valor Previsto</span>
-                            <span className={`font-bold ${isIncome ? 'text-green-400' : 'text-red-400'}`}>
-                                R$ {record.amount.toLocaleString('pt-BR')}
-                            </span>
-                        </div>
-                    </div>
-                   );
-                })}
-             </div>
-          ) : (
-             <div className="p-10 text-center text-slate-400">
-                <Calendar className="mx-auto mb-2 opacity-20" size={40} />
-                <p>Nenhum lançamento previsto para os próximos 15 dias.</p>
-             </div>
-          )}
+                          return (
+                            <tr key={record.id} className="hover:bg-slate-50 transition-colors group">
+                                <td className="px-6 py-4 font-bold text-slate-700">
+                                    {name}
+                                </td>
+                                <td className="px-6 py-4 text-slate-600">
+                                    {record.description}
+                                    <div className="text-[10px] text-slate-400 uppercase mt-0.5">{record.category}</div>
+                                </td>
+                                <td className="px-6 py-4">
+                                    <div className={`flex items-center gap-2 ${isOverdue ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
+                                        <Calendar size={14} />
+                                        {new Date(record.dueDate).toLocaleDateString('pt-BR')}
+                                    </div>
+                                </td>
+                                <td className={`px-6 py-4 font-bold ${record.type === FinanceType.INCOME ? 'text-green-600' : 'text-red-600'}`}>
+                                    R$ {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-6 py-4">
+                                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                        record.status === 'Atrasado' || isOverdue ? 'bg-red-100 text-red-700' : 
+                                        'bg-yellow-100 text-yellow-700'
+                                    }`}>
+                                        {isOverdue ? 'Atrasado' : record.status}
+                                    </span>
+                                </td>
+                                {!isGlobal && (
+                                    <td className="px-6 py-4 text-right">
+                                        <div className="flex justify-end gap-2">
+                                            {/* Pay Button */}
+                                            <button 
+                                                onClick={() => quickPay(record)}
+                                                className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded shadow-sm flex items-center gap-1 transition-colors"
+                                                title="Dar Baixa (Pago)"
+                                            >
+                                                <CheckCircle2 size={12} /> Baixar
+                                            </button>
+                                            <button 
+                                                onClick={() => handleOpenModal(record)}
+                                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                title="Editar"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                            {onDeleteRecord && (
+                                                <button 
+                                                    onClick={() => onDeleteRecord(record.id)}
+                                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                    title="Excluir"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                )}
+                            </tr>
+                          );
+                      })}
+                      {openInvoices.length === 0 && (
+                          <tr>
+                              <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                                  <CheckCircle2 size={32} className="mx-auto mb-2 text-green-500 opacity-50" />
+                                  Tudo em dia! Nenhuma conta em aberto.
+                              </td>
+                          </tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
       </div>
 
       {/* New/Edit Launch Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+          <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
              <div className="flex justify-between items-center mb-6 pb-2 border-b border-slate-100">
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                    <DollarSign className="text-pms-600" /> {editingId ? 'Editar Lançamento' : 'Novo Lançamento'}
@@ -393,14 +449,41 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ records, currentUser, 
                    </div>
                 </div>
 
+                {/* Entity Selection (Supplier/Client) */}
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <label className="block text-sm font-bold text-slate-700 mb-1">
+                        {type === FinanceType.INCOME ? 'Cliente (Pagador)' : 'Fornecedor / Prestador'}
+                    </label>
+                    <div className="relative">
+                        <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <select 
+                            className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                            value={selectedEntityId}
+                            onChange={(e) => setSelectedEntityId(e.target.value)}
+                        >
+                            <option value="">Selecione da lista...</option>
+                            {users
+                                .filter(u => {
+                                    // Filter logic: Expenses -> Suppliers/Employees, Income -> Clients
+                                    if (type === FinanceType.EXPENSE) return u.category !== 'CLIENT';
+                                    return u.category === 'CLIENT';
+                                })
+                                .map(u => (
+                                <option key={u.id} value={u.id}>{u.name} ({u.category})</option>
+                            ))}
+                        </select>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">Vincule para aparecer no Resumo por Fornecedor.</p>
+                </div>
+
                 {/* Description */}
                 <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-1">Descrição</label>
+                   <label className="block text-sm font-bold text-slate-700 mb-1">Descrição / Item</label>
                    <div className="relative">
                       <FileText className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input 
                         type="text" 
-                        placeholder="Ex: Pagamento Fornecedor ABC"
+                        placeholder="Ex: Parcela 1/3 Cimento"
                         className="w-full pl-10 pr-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pms-500 outline-none"
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}

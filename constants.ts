@@ -1,5 +1,6 @@
 
-import { ConstructionWork, User, UserRole, WorkStatus, Task, TaskStatus, TaskPriority, FinancialRecord, FinanceType, FinanceCategory, DailyLog, UserProfile, MaterialOrder, OrderStatus } from './types';
+
+import { ConstructionWork, User, UserRole, WorkStatus, Task, TaskStatus, TaskPriority, FinancialRecord, FinanceType, FinanceCategory, DailyLog, UserProfile, MaterialOrder, OrderStatus, TaskStatusDefinition, Material } from './types';
 
 // Helper to get a date string relative to today
 const getFutureDate = (days: number) => {
@@ -7,6 +8,16 @@ const getFutureDate = (days: number) => {
   date.setDate(date.getDate() + days);
   return date.toISOString().split('T')[0];
 };
+
+// --- STATUS DEFINITIONS ---
+export const DEFAULT_TASK_STATUSES: TaskStatusDefinition[] = [
+  { id: TaskStatus.BACKLOG, label: 'Backlog', colorScheme: 'gray', order: 0 },
+  { id: TaskStatus.PLANNING, label: 'Planejamento', colorScheme: 'blue', order: 1 },
+  { id: TaskStatus.EXECUTION, label: 'Execução (Pedro)', colorScheme: 'orange', order: 2 },
+  { id: TaskStatus.WAITING_MATERIAL, label: 'Aguard. Material', colorScheme: 'yellow', order: 3 },
+  { id: TaskStatus.NC, label: 'Não Conformidade', colorScheme: 'red', order: 4 },
+  { id: TaskStatus.DONE, label: 'Concluído', colorScheme: 'green', order: 5 },
+];
 
 // --- PROFILES ---
 export const MOCK_PROFILES: UserProfile[] = [
@@ -66,12 +77,30 @@ export const MOCK_PROFILES: UserProfile[] = [
   },
   {
     id: 'p_client',
-    name: 'Cliente',
-    description: 'Visualização restrita',
+    name: 'Cliente (Visualização)',
+    description: 'Acesso restrito para acompanhamento',
     isSystem: false,
     permissions: {
       viewDashboard: false,
       viewWorks: true,
+      manageWorks: false,
+      viewFinance: false,
+      manageFinance: false,
+      viewGlobalTasks: false,
+      viewMaterials: false,
+      manageMaterials: false,
+      manageUsers: false,
+      isSystemAdmin: false
+    }
+  },
+  {
+    id: 'p_supplier',
+    name: 'Fornecedor',
+    description: 'Apenas cadastro, sem acesso ao sistema',
+    isSystem: false,
+    permissions: {
+      viewDashboard: false,
+      viewWorks: false,
       manageWorks: false,
       viewFinance: false,
       manageFinance: false,
@@ -88,22 +117,27 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u1',
     name: 'Marcos (Admin)',
+    category: 'EMPLOYEE',
     role: UserRole.ADMIN,
     profileId: 'p_admin',
     avatar: 'https://picsum.photos/id/1005/100/100',
-    email: 'marcos@pms.com'
+    email: 'marcos@pms.com',
+    phone: '(11) 99999-0001'
   },
   {
     id: 'u2',
     name: 'Pedro (Sócio/Campo)',
+    category: 'EMPLOYEE',
     role: UserRole.PARTNER,
     profileId: 'p_partner',
     avatar: 'https://picsum.photos/id/1012/100/100',
-    email: 'pedro@pms.com'
+    email: 'pedro@pms.com',
+    phone: '(11) 99999-0002'
   },
   {
     id: 'u3',
     name: 'João (Mestre)',
+    category: 'EMPLOYEE',
     role: UserRole.MASTER,
     profileId: 'p_master',
     avatar: 'https://picsum.photos/id/1025/100/100',
@@ -111,11 +145,59 @@ export const MOCK_USERS: User[] = [
   },
   {
     id: 'u4',
-    name: 'Dr. Roberto (Cliente)',
+    name: 'Dr. Roberto',
+    category: 'CLIENT',
     role: UserRole.CLIENT,
     profileId: 'p_client',
     avatar: 'https://picsum.photos/id/1006/100/100',
-    email: 'roberto@cliente.com'
+    email: 'roberto@cliente.com',
+    cpf: '123.456.789-00',
+    address: 'Rua das Flores, 100, Jardim Paulista',
+    phone: '(11) 98888-7777'
+  },
+  {
+    id: 'u5',
+    name: 'TecnoSoluções Ltda',
+    category: 'CLIENT',
+    role: UserRole.CLIENT,
+    profileId: 'p_client',
+    avatar: 'https://ui-avatars.com/api/?name=Tecno+Solucoes&background=random',
+    email: 'contato@tecnosolucoes.com.br',
+    cpf: '00.000.000/0001-99', // CNPJ technically
+    address: 'Av. Central, 500'
+  },
+  {
+    id: 'u6',
+    name: 'Casa do Cimento',
+    category: 'SUPPLIER',
+    role: UserRole.VIEWER,
+    profileId: 'p_supplier',
+    avatar: 'https://ui-avatars.com/api/?name=Casa+Cimento&background=random',
+    email: 'vendas@casadocimento.com',
+    phone: '(11) 3333-4444',
+    address: 'Rodovia BR 101, km 50'
+  },
+  {
+    id: 'u7',
+    name: 'ConstruMax Atacado',
+    category: 'SUPPLIER',
+    role: UserRole.VIEWER,
+    profileId: 'p_supplier',
+    avatar: 'https://ui-avatars.com/api/?name=Constru+Max&background=random',
+    email: 'vendas@construmax.com',
+    phone: '(11) 3333-5555',
+    address: 'Av. Industrial, 200'
+  },
+  {
+    id: 'u8',
+    name: 'Elétrica & Cia',
+    category: 'SUPPLIER',
+    role: UserRole.VIEWER,
+    profileId: 'p_supplier',
+    avatar: 'https://ui-avatars.com/api/?name=Eletrica+Cia&background=random',
+    email: 'vendas@eletricaecia.com',
+    phone: '(11) 3333-6666',
+    address: 'Rua da Luz, 300'
   }
 ];
 
@@ -124,6 +206,7 @@ export const MOCK_WORKS: ConstructionWork[] = [
     id: 'w1',
     name: 'Residencial Vila Verde',
     client: 'Dr. Roberto',
+    clientId: 'u4',
     address: 'Rua das Palmeiras, 120',
     status: WorkStatus.EXECUTION,
     progress: 65,
@@ -137,7 +220,8 @@ export const MOCK_WORKS: ConstructionWork[] = [
   {
     id: 'w2',
     name: 'Escritório Centro',
-    client: 'TecnoSoluções',
+    client: 'TecnoSoluções Ltda',
+    clientId: 'u5',
     address: 'Av. Central, 500 - Sala 402',
     status: WorkStatus.PLANNING,
     progress: 15,
@@ -190,6 +274,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
   {
     id: 'f1',
     workId: 'w1',
+    entityId: 'u6', // Casa do Cimento
     type: FinanceType.EXPENSE,
     category: FinanceCategory.MATERIAL,
     description: 'Cimento e Areia (Lote 1)',
@@ -201,6 +286,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
   {
     id: 'f2',
     workId: 'w1',
+    entityId: 'u2', // Pedro
     type: FinanceType.EXPENSE,
     category: FinanceCategory.LABOR,
     description: 'Pagamento Quinzenal Equipe',
@@ -211,6 +297,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
   {
     id: 'f3',
     workId: 'w2',
+    entityId: 'u5', // TecnoSoluções
     type: FinanceType.INCOME,
     category: FinanceCategory.OTHER,
     description: 'Entrada Projeto',
@@ -223,6 +310,7 @@ export const MOCK_FINANCE: FinancialRecord[] = [
   {
     id: 'f_alert_1',
     workId: 'w1',
+    entityId: 'u8', // Elétrica & Cia
     type: FinanceType.EXPENSE,
     category: FinanceCategory.MATERIAL,
     description: 'Aço CA-50 10mm (Alerta)',
@@ -256,6 +344,7 @@ export const MOCK_ORDERS: MaterialOrder[] = [
     status: OrderStatus.PENDING,
     priority: TaskPriority.HIGH,
     requestDate: '2024-05-21',
+    quotes: []
   },
   {
     id: 'mo2',
@@ -268,6 +357,9 @@ export const MOCK_ORDERS: MaterialOrder[] = [
     status: OrderStatus.QUOTING,
     priority: TaskPriority.MEDIUM,
     requestDate: '2024-05-20',
+    quotes: [
+        { id: 'q1', supplierId: 'u6', price: 720.00 },
+    ]
   },
   {
     id: 'mo3',
@@ -280,7 +372,9 @@ export const MOCK_ORDERS: MaterialOrder[] = [
     priority: TaskPriority.HIGH,
     requestDate: '2024-05-15',
     purchaseDate: '2024-05-18',
-    finalCost: 1800.00
+    finalCost: 1800.00,
+    supplierId: 'u7',
+    quotes: []
   },
   {
     id: 'mo4',
@@ -294,6 +388,55 @@ export const MOCK_ORDERS: MaterialOrder[] = [
     requestDate: '2024-05-10',
     purchaseDate: '2024-05-12',
     deliveryDate: '2024-05-14',
-    finalCost: 1100.00
+    finalCost: 1100.00,
+    supplierId: 'u6',
+    quotes: []
+  }
+];
+
+export const MOCK_MATERIALS: Material[] = [
+  {
+    id: 'm1',
+    name: 'Cimento CP II - 50kg',
+    category: 'Alvenaria',
+    unit: 'saco',
+    brand: 'Votoran',
+    priceEstimate: 32.50,
+    description: 'Cimento Portland composto, uso geral em reboco, contrapiso e concreto magro.'
+  },
+  {
+    id: 'm2',
+    name: 'Areia Média Lavada',
+    category: 'Alvenaria',
+    unit: 'm³',
+    priceEstimate: 120.00,
+    description: 'Areia média para assentamento de blocos e chapisco.'
+  },
+  {
+    id: 'm3',
+    name: 'Tijolo Cerâmico 8 Furos',
+    category: 'Alvenaria',
+    unit: 'milheiro',
+    brand: 'Olaria Regional',
+    priceEstimate: 900.00,
+    description: 'Bloco cerâmico de vedação 9x19x19.'
+  },
+  {
+    id: 'm4',
+    name: 'Cabo Flexível 2.5mm',
+    category: 'Elétrica',
+    unit: 'rolo 100m',
+    brand: 'Sil',
+    priceEstimate: 210.00,
+    description: 'Fio elétrico anti-chama para circuitos de tomadas comuns.'
+  },
+  {
+    id: 'm5',
+    name: 'Tinta Acrílica Fosca Branco Neve',
+    category: 'Pintura',
+    unit: 'lata 18L',
+    brand: 'Suvinil',
+    priceEstimate: 450.00,
+    description: 'Tinta de acabamento fosco para paredes internas.'
   }
 ];

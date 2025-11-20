@@ -1,19 +1,28 @@
 
 import React, { useState, useMemo } from 'react';
-import { MaterialOrder, OrderStatus, ConstructionWork, Task, User, TaskPriority, AppPermissions } from '../types';
-import { Package, ShoppingCart, Truck, CheckCircle2, Plus, Filter, Copy, FileText, X, Edit2, DollarSign, BarChart3 } from 'lucide-react';
+import { MaterialOrder, OrderStatus, ConstructionWork, Task, User, TaskPriority, AppPermissions, Material, MaterialQuote } from '../types';
+import { Package, ShoppingCart, Truck, CheckCircle2, Plus, Filter, Copy, FileText, X, Edit2, DollarSign, BarChart3, Trash2, ExternalLink, Save } from 'lucide-react';
 
 interface MaterialOrdersProps {
   orders: MaterialOrder[];
   works: ConstructionWork[];
   tasks: Task[];
   users: User[];
+  materials: Material[];
   currentUser: User;
   onAddOrder: (order: MaterialOrder) => void;
   onUpdateOrder: (order: MaterialOrder) => void;
+  onOpenMaterialCatalog: () => void;
 }
 
-export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, tasks, users, currentUser, onAddOrder, onUpdateOrder }) => {
+interface BatchItem {
+    id: string;
+    itemName: string;
+    quantity: number | '';
+    unit: string;
+}
+
+export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, tasks, users, materials, currentUser, onAddOrder, onUpdateOrder, onOpenMaterialCatalog }) => {
   const [activeTab, setActiveTab] = useState<'LIST' | 'REPORT'>('LIST');
   
   // Filters
@@ -22,19 +31,29 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false); // Used for simple Purchase confirmation (fallback)
+  const [isQuoteModalOpen, setIsQuoteModalOpen] = useState(false); // New Quote Modal
+
   const [editingOrder, setEditingOrder] = useState<MaterialOrder | null>(null);
 
-  // Creation Form
-  const [newItemName, setNewItemName] = useState('');
-  const [newQuantity, setNewQuantity] = useState<number | ''>('');
-  const [newUnit, setNewUnit] = useState('un');
+  // Creation Form State (Batch)
   const [newWorkId, setNewWorkId] = useState('');
   const [newTaskId, setNewTaskId] = useState('');
   const [newPriority, setNewPriority] = useState<TaskPriority>(TaskPriority.MEDIUM);
+  const [newSupplierId, setNewSupplierId] = useState('');
+  
+  // Batch Items State
+  const [batchItems, setBatchItems] = useState<BatchItem[]>([
+      { id: '1', itemName: '', quantity: '', unit: 'un' }
+  ]);
 
   // Status Update State
   const [statusUpdateCost, setStatusUpdateCost] = useState<string>('');
+
+  // Quotation State
+  const [currentQuotes, setCurrentQuotes] = useState<MaterialQuote[]>([]);
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string>('');
+
 
   const filteredOrders = useMemo(() => {
     return orders.filter(order => {
@@ -51,48 +70,91 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
     [OrderStatus.DELIVERED]: filteredOrders.filter(o => o.status === OrderStatus.DELIVERED),
   };
 
+  const suppliers = useMemo(() => users.filter(u => u.category === 'SUPPLIER'), [users]);
+
   // --- Handlers ---
 
   const handleOpenCreate = () => {
     setEditingOrder(null);
-    setNewItemName('');
-    setNewQuantity('');
-    setNewUnit('un');
+    // Defaults
     setNewWorkId(works[0]?.id || '');
     setNewTaskId('');
     setNewPriority(TaskPriority.MEDIUM);
+    setNewSupplierId('');
+    setBatchItems([{ id: Date.now().toString(), itemName: '', quantity: '', unit: 'un' }]);
     setIsModalOpen(true);
   };
 
-  const handleCreateOrder = () => {
-    if (!newItemName || !newQuantity || !newWorkId) return;
+  const handleAddItemRow = () => {
+      setBatchItems(prev => [...prev, { id: Date.now().toString(), itemName: '', quantity: '', unit: 'un' }]);
+  };
 
-    const newOrder: MaterialOrder = {
-      id: Math.random().toString(36).substr(2, 9),
-      workId: newWorkId,
-      taskId: newTaskId || undefined,
-      requesterId: currentUser.id,
-      itemName: newItemName,
-      quantity: Number(newQuantity),
-      unit: newUnit,
-      status: OrderStatus.PENDING,
-      priority: newPriority,
-      requestDate: new Date().toISOString().split('T')[0]
-    };
+  const handleRemoveItemRow = (id: string) => {
+      if (batchItems.length === 1) return;
+      setBatchItems(prev => prev.filter(item => item.id !== id));
+  };
 
-    onAddOrder(newOrder);
+  const handleItemChange = (id: string, field: keyof BatchItem, value: any) => {
+      setBatchItems(prev => {
+          return prev.map(item => {
+              if (item.id === id) {
+                  // Standard Update
+                  const updatedItem = { ...item, [field]: value };
+                  
+                  // Logic for auto-filling Unit based on Material Selection
+                  if (field === 'itemName') {
+                      const foundMaterial = materials.find(m => m.name === value);
+                      if (foundMaterial) {
+                          updatedItem.unit = foundMaterial.unit;
+                      }
+                  }
+                  return updatedItem;
+              }
+              return item;
+          });
+      });
+  };
+
+  const handleCreateBatch = () => {
+    if (!newWorkId) return;
+    
+    // Filter valid items
+    const validItems = batchItems.filter(item => item.itemName.trim() && item.quantity);
+    
+    if (validItems.length === 0) {
+        alert("Adicione pelo menos um item com nome e quantidade.");
+        return;
+    }
+
+    validItems.forEach(item => {
+        const newOrder: MaterialOrder = {
+            id: Math.random().toString(36).substr(2, 9),
+            workId: newWorkId,
+            taskId: newTaskId || undefined,
+            requesterId: currentUser.id,
+            supplierId: newSupplierId || undefined,
+            itemName: item.itemName,
+            quantity: Number(item.quantity),
+            unit: item.unit,
+            status: OrderStatus.PENDING,
+            priority: newPriority,
+            requestDate: new Date().toISOString().split('T')[0],
+            quotes: []
+        };
+        onAddOrder(newOrder);
+    });
+
     setIsModalOpen(false);
   };
 
   const handleMoveStatus = (order: MaterialOrder, nextStatus: OrderStatus) => {
-    // If moving to PURCHASED, we might want to ask for cost
-    if (nextStatus === OrderStatus.PURCHASED) {
-      setEditingOrder(order);
-      setStatusUpdateCost(order.finalCost?.toString() || '');
-      setIsStatusModalOpen(true);
-      return;
+    // If currently Quoting and moving to Purchased, open Quote Modal instead of direct move
+    if (order.status === OrderStatus.QUOTING && nextStatus === OrderStatus.PURCHASED) {
+        handleOpenQuoteModal(order);
+        return;
     }
 
+    // Fallback: Simple move
     const updatedOrder = { ...order, status: nextStatus };
     if (nextStatus === OrderStatus.DELIVERED) {
         updatedOrder.deliveryDate = new Date().toISOString().split('T')[0];
@@ -100,18 +162,76 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
     onUpdateOrder(updatedOrder);
   };
 
-  const confirmPurchase = () => {
-    if (!editingOrder) return;
-    const updatedOrder = { 
-        ...editingOrder, 
-        status: OrderStatus.PURCHASED,
-        purchaseDate: new Date().toISOString().split('T')[0],
-        finalCost: statusUpdateCost ? parseFloat(statusUpdateCost) : 0
-    };
-    onUpdateOrder(updatedOrder);
-    setIsStatusModalOpen(false);
-    setEditingOrder(null);
+  // --- Quotation Logic ---
+
+  const handleOpenQuoteModal = (order: MaterialOrder) => {
+      setEditingOrder(order);
+      
+      // Initialize quotes (ensure 3 slots structure logically, or just map existing)
+      // We will render 3 fixed slots in UI
+      const existingQuotes = order.quotes || [];
+      setCurrentQuotes(existingQuotes);
+      setSelectedQuoteId(order.selectedQuoteId || '');
+
+      setIsQuoteModalOpen(true);
   };
+
+  const updateQuoteSlot = (index: number, field: 'supplierId' | 'price', value: any) => {
+      const newQuotes = [...currentQuotes];
+      
+      // Ensure slot exists
+      if (!newQuotes[index]) {
+          newQuotes[index] = { id: `q_${Date.now()}_${index}`, supplierId: '', price: 0 };
+      }
+
+      if (field === 'supplierId') newQuotes[index].supplierId = value;
+      if (field === 'price') newQuotes[index].price = parseFloat(value);
+
+      setCurrentQuotes(newQuotes);
+  };
+
+  const saveQuotes = () => {
+      if (!editingOrder) return;
+
+      // Filter out empty slots for storage
+      const validQuotes = currentQuotes.filter(q => q.supplierId && q.price > 0);
+
+      const updatedOrder: MaterialOrder = {
+          ...editingOrder,
+          quotes: validQuotes,
+          selectedQuoteId
+      };
+      
+      onUpdateOrder(updatedOrder);
+      setIsQuoteModalOpen(false);
+  };
+
+  const approvePurchase = () => {
+      if (!editingOrder || !selectedQuoteId) {
+          alert("Selecione uma cotação vencedora para aprovar a compra.");
+          return;
+      }
+
+      const selectedQuote = currentQuotes.find(q => q.id === selectedQuoteId);
+      if (!selectedQuote) return;
+
+      const validQuotes = currentQuotes.filter(q => q.supplierId && q.price > 0);
+
+      const updatedOrder: MaterialOrder = {
+          ...editingOrder,
+          quotes: validQuotes,
+          selectedQuoteId,
+          status: OrderStatus.PURCHASED,
+          purchaseDate: new Date().toISOString().split('T')[0],
+          supplierId: selectedQuote.supplierId, // Set the main supplier ID
+          finalCost: selectedQuote.price // Set final cost
+      };
+
+      onUpdateOrder(updatedOrder);
+      setIsQuoteModalOpen(false);
+      setEditingOrder(null);
+  };
+
 
   const copyQuoteList = () => {
     const pendingItems = groupedByStatus[OrderStatus.PENDING];
@@ -132,7 +252,9 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
         const workName = works.find(w => w.id === workId)?.name || 'Obra Desconhecida';
         text += `📍 *OBRA: ${workName}*\n`;
         byWork[workId].forEach(item => {
-            text += `- ${item.quantity} ${item.unit} de ${item.itemName}\n`;
+            const supplier = users.find(u => u.id === item.supplierId);
+            const supplierText = supplier ? `(Pref: ${supplier.name})` : '';
+            text += `- ${item.quantity} ${item.unit} de ${item.itemName} ${supplierText}\n`;
         });
         text += `\n`;
     });
@@ -146,10 +268,8 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
       const reportData: Record<string, { name: string, unit: string, quantity: number, cost: number, count: number }> = {};
 
       orders.forEach(order => {
-        // Filter logic can apply here too if needed, currently global or filtered by Work selector in UI
         if (filterWork !== 'ALL' && order.workId !== filterWork) return;
 
-        // Key by Item Name + Unit to avoid merging "Metros of Sand" with "Trucks of Sand"
         const key = `${order.itemName.toLowerCase().trim()}-${order.unit}`;
         
         if (!reportData[key]) {
@@ -177,7 +297,7 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
             <h2 className="text-2xl font-bold text-slate-800">Pedidos de Materiais</h2>
-            <p className="text-slate-500">Gestão de compras, entregas e consumo de insumos.</p>
+            <p className="text-slate-500">Gestão de compras, cotações e entregas.</p>
         </div>
         <div className="flex gap-2">
             <button 
@@ -198,7 +318,7 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
                     className="bg-pms-600 hover:bg-pms-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all ml-2"
                 >
                     <Plus size={20} />
-                    Novo Pedido
+                    Nova Solicitação
                 </button>
             )}
         </div>
@@ -248,7 +368,15 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
                      </div>
                      <div className="p-2 space-y-2 flex-1">
                          {groupedByStatus[OrderStatus.QUOTING].map(order => (
-                             <OrderItem key={order.id} order={order} works={works} users={users} onNext={() => handleMoveStatus(order, OrderStatus.PURCHASED)} />
+                             <OrderItem 
+                                key={order.id} 
+                                order={order} 
+                                works={works} 
+                                users={users} 
+                                // When clicking next on Quoting, we go to Purchased via the modal
+                                onNext={() => handleMoveStatus(order, OrderStatus.PURCHASED)} 
+                                onClick={() => handleOpenQuoteModal(order)}
+                             />
                          ))}
                      </div>
                  </div>
@@ -330,143 +458,260 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
           </div>
       )}
 
-      {/* CREATE MODAL */}
+      {/* CREATE BATCH MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
-             <div className="flex justify-between items-center mb-6 pb-2 border-b border-slate-100">
+          <div className="bg-white rounded-xl w-full max-w-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
+             <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                   <Package className="text-pms-600" /> Novo Pedido de Material
+                   <Package className="text-pms-600" /> Nova Solicitação de Materiais
                 </h3>
                 <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100">
                    <X size={24} />
                 </button>
              </div>
 
-             <div className="space-y-4">
-                <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-1">O que você precisa?</label>
-                   <input 
-                     type="text" 
-                     className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                     placeholder="Ex: Saco de Cimento CP II"
-                     value={newItemName}
-                     onChange={e => setNewItemName(e.target.value)}
-                   />
-                </div>
+             <div className="overflow-y-auto custom-scroll flex-1 pr-2">
+                 {/* Common Fields */}
+                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6">
+                     <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                         <Filter size={16}/> Contexto da Solicitação
+                     </h4>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Obra de Destino</label>
+                            <select 
+                                className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                                value={newWorkId}
+                                onChange={e => setNewWorkId(e.target.value)}
+                            >
+                                {works.map(w => (
+                                    <option key={w.id} value={w.id}>{w.name}</option>
+                                ))}
+                            </select>
+                         </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                   <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Quantidade</label>
-                      <input 
-                        type="number" 
-                        className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                        placeholder="0"
-                        value={newQuantity}
-                        onChange={e => setNewQuantity(parseInt(e.target.value))}
-                      />
-                   </div>
-                   <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Unidade</label>
-                      <select 
-                         className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none bg-white"
-                         value={newUnit}
-                         onChange={e => setNewUnit(e.target.value)}
-                      >
-                          {['un', 'kg', 'sacos', 'm', 'm²', 'm³', 'lata', 'caixa', 'milheiro', 'caminhão'].map(u => (
-                              <option key={u} value={u}>{u}</option>
-                          ))}
-                      </select>
-                   </div>
-                </div>
+                         <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Vincular à Tarefa (Opcional)</label>
+                            <select 
+                                className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                                value={newTaskId}
+                                onChange={e => setNewTaskId(e.target.value)}
+                                disabled={!newWorkId}
+                            >
+                                <option value="">Geral (Sem tarefa específica)</option>
+                                {tasks.filter(t => t.workId === newWorkId).map(t => (
+                                    <option key={t.id} value={t.id}>{t.title}</option>
+                                ))}
+                            </select>
+                         </div>
 
-                <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-1">Obra de Destino</label>
-                   <select 
-                      className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none bg-white"
-                      value={newWorkId}
-                      onChange={e => setNewWorkId(e.target.value)}
-                   >
-                       {works.map(w => (
-                           <option key={w.id} value={w.id}>{w.name}</option>
-                       ))}
-                   </select>
-                </div>
+                         <div>
+                             <label className="block text-xs font-bold text-slate-500 mb-1">Prioridade</label>
+                             <div className="flex gap-2">
+                                 {Object.values(TaskPriority).map(p => (
+                                     <button
+                                       key={p}
+                                       onClick={() => setNewPriority(p)}
+                                       className={`px-3 py-1.5 rounded text-xs font-bold border transition-all ${newPriority === p ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
+                                     >
+                                         {p}
+                                     </button>
+                                 ))}
+                             </div>
+                         </div>
 
-                <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-1">Vincular à Tarefa (Opcional)</label>
-                   <select 
-                      className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none bg-white"
-                      value={newTaskId}
-                      onChange={e => setNewTaskId(e.target.value)}
-                      disabled={!newWorkId}
-                   >
-                       <option value="">Sem tarefa específica</option>
-                       {tasks.filter(t => t.workId === newWorkId).map(t => (
-                           <option key={t.id} value={t.id}>{t.title}</option>
-                       ))}
-                   </select>
-                </div>
+                         <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Fornecedor Preferencial (Opcional)</label>
+                            <select 
+                                className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                                value={newSupplierId}
+                                onChange={e => setNewSupplierId(e.target.value)}
+                            >
+                                <option value="">Selecione um fornecedor...</option>
+                                {suppliers.map(s => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                            </select>
+                         </div>
+                     </div>
+                 </div>
 
-                <div>
-                   <label className="block text-sm font-bold text-slate-700 mb-1">Prioridade</label>
-                   <div className="flex gap-2">
-                       {Object.values(TaskPriority).map(p => (
-                           <button
-                             key={p}
-                             onClick={() => setNewPriority(p)}
-                             className={`px-3 py-1.5 rounded text-xs font-bold border transition-all ${newPriority === p ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}
-                           >
-                               {p}
-                           </button>
-                       ))}
-                   </div>
-                </div>
+                 {/* Batch Items */}
+                 <div>
+                     <div className="flex justify-between items-center mb-3">
+                         <h4 className="text-sm font-bold text-slate-800 flex items-center justify-between">
+                             <span>Itens da Solicitação</span>
+                         </h4>
+                         <button 
+                            onClick={onOpenMaterialCatalog}
+                            className="text-xs font-bold text-pms-600 bg-pms-50 px-2 py-1 rounded flex items-center gap-1 hover:bg-pms-100 transition-colors"
+                         >
+                            Não encontrou? Cadastrar Material <ExternalLink size={10} />
+                         </button>
+                     </div>
+                     
+                     <div className="space-y-2">
+                         {batchItems.map((item, index) => (
+                             <div key={item.id} className="flex gap-2 items-center animate-in fade-in slide-in-from-left-2">
+                                 <div className="w-8 text-center text-xs font-bold text-slate-400 pt-2">{index + 1}</div>
+                                 <div className="flex-1 relative">
+                                     <input 
+                                       list={`materials-${item.id}`}
+                                       className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none"
+                                       placeholder="Nome do Material (Selecionar ou Digitar)"
+                                       value={item.itemName}
+                                       onChange={e => handleItemChange(item.id, 'itemName', e.target.value)}
+                                     />
+                                     <datalist id={`materials-${item.id}`}>
+                                         {materials.map(m => (
+                                             <option key={m.id} value={m.name} />
+                                         ))}
+                                     </datalist>
+                                 </div>
+                                 <div className="w-24">
+                                     <input 
+                                       type="number" 
+                                       className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none"
+                                       placeholder="Qtd"
+                                       value={item.quantity}
+                                       onChange={e => handleItemChange(item.id, 'quantity', e.target.value)}
+                                     />
+                                 </div>
+                                 <div className="w-28">
+                                     <select 
+                                        className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                                        value={item.unit}
+                                        onChange={e => handleItemChange(item.id, 'unit', e.target.value)}
+                                     >
+                                         {['un', 'kg', 'sacos', 'm', 'm²', 'm³', 'lata', 'caixa', 'milheiro', 'caminhão', 'barras', 'rolo', 'par'].map(u => (
+                                             <option key={u} value={u}>{u}</option>
+                                         ))}
+                                     </select>
+                                 </div>
+                                 <button 
+                                    onClick={() => handleRemoveItemRow(item.id)}
+                                    disabled={batchItems.length === 1}
+                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-30"
+                                    title="Remover item"
+                                 >
+                                     <Trash2 size={18} />
+                                 </button>
+                             </div>
+                         ))}
+                     </div>
+
+                     <button 
+                        onClick={handleAddItemRow}
+                        className="mt-4 text-sm text-pms-600 font-bold flex items-center gap-1 hover:underline"
+                     >
+                         <Plus size={16} /> Adicionar outro item
+                     </button>
+                 </div>
              </div>
 
              <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
                 <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">
                     Cancelar
                 </button>
-                <button onClick={handleCreateOrder} disabled={!newItemName || !newQuantity} className="px-4 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 font-bold shadow-lg disabled:opacity-50">
-                    Solicitar Material
+                <button onClick={handleCreateBatch} className="px-6 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 font-bold shadow-lg">
+                    Gerar Solicitação ({batchItems.filter(i => i.itemName).length} itens)
                 </button>
              </div>
           </div>
         </div>
       )}
 
-      {/* STATUS / COST UPDATE MODAL */}
-      {isStatusModalOpen && editingOrder && (
+      {/* NEW QUOTATION MODAL */}
+      {isQuoteModalOpen && editingOrder && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl">
-                  <h3 className="text-lg font-bold text-slate-800 mb-4">Confirmar Compra</h3>
-                  <p className="text-sm text-slate-600 mb-4">
-                      Informe o valor final da compra para o item: <br/>
-                      <strong>{editingOrder.quantity} {editingOrder.unit} de {editingOrder.itemName}</strong>
-                  </p>
-
-                  <div className="mb-6">
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Valor Total (R$)</label>
-                      <div className="relative">
-                          <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                          <input 
-                            type="number" 
-                            className="w-full pl-8 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pms-500 outline-none"
-                            placeholder="0.00"
-                            value={statusUpdateCost}
-                            onChange={e => setStatusUpdateCost(e.target.value)}
-                          />
-                      </div>
-                      <p className="text-xs text-slate-400 mt-1">Deixe em branco se não souber o valor agora.</p>
+              <div className="bg-white rounded-xl w-full max-w-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+                  <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                     <div>
+                        <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <FileText size={24} className="text-yellow-600"/>
+                            Cotação de Preços
+                        </h3>
+                        <p className="text-slate-500 text-sm mt-1">
+                            Produto: <strong className="text-slate-800">{editingOrder.quantity} {editingOrder.unit} de {editingOrder.itemName}</strong>
+                        </p>
+                     </div>
+                     <button onClick={() => setIsQuoteModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                         <X size={24} />
+                     </button>
                   </div>
 
-                  <div className="flex gap-3 justify-end">
-                      <button onClick={() => setIsStatusModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">
-                          Cancelar
+                  <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {[0, 1, 2].map((index) => {
+                              const quote = currentQuotes[index] || { id: `new_${index}`, supplierId: '', price: 0 };
+                              const isSelected = selectedQuoteId === quote.id;
+
+                              return (
+                                  <div 
+                                    key={index} 
+                                    className={`border rounded-xl p-4 relative transition-all ${
+                                        isSelected ? 'border-green-500 bg-green-50 ring-1 ring-green-500' : 'border-slate-200 bg-slate-50'
+                                    }`}
+                                    onClick={() => {
+                                        if (quote.supplierId && quote.price) setSelectedQuoteId(quote.id);
+                                    }}
+                                  >
+                                      <div className="mb-3">
+                                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Fornecedor {index + 1}</label>
+                                          <select 
+                                              className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-yellow-500 outline-none bg-white"
+                                              value={quote.supplierId}
+                                              onChange={(e) => updateQuoteSlot(index, 'supplierId', e.target.value)}
+                                          >
+                                              <option value="">Selecione...</option>
+                                              {suppliers.map(s => (
+                                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                              ))}
+                                          </select>
+                                      </div>
+                                      <div>
+                                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Preço Total (R$)</label>
+                                          <div className="relative">
+                                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
+                                             <input 
+                                                 type="number" 
+                                                 className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-sm font-bold focus:ring-2 focus:ring-yellow-500 outline-none"
+                                                 placeholder="0.00"
+                                                 value={quote.price || ''}
+                                                 onChange={(e) => updateQuoteSlot(index, 'price', e.target.value)}
+                                             />
+                                          </div>
+                                      </div>
+                                      
+                                      {quote.supplierId && quote.price > 0 && (
+                                          <div className="mt-4 flex justify-center">
+                                              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                                                  isSelected ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300'
+                                              }`}>
+                                                  {isSelected && <CheckCircle2 size={16} />}
+                                              </div>
+                                          </div>
+                                      )}
+                                  </div>
+                              );
+                          })}
+                      </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-slate-100">
+                      <button 
+                        onClick={saveQuotes}
+                        className="px-4 py-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium flex items-center gap-2"
+                      >
+                          <Save size={18} /> Salvar Cotação
                       </button>
-                      <button onClick={confirmPurchase} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 font-bold shadow-lg">
-                          Confirmar Compra
+                      <button 
+                        onClick={approvePurchase}
+                        disabled={!selectedQuoteId}
+                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 font-bold shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                          <CheckCircle2 size={18} /> Aprovar Compra
                       </button>
                   </div>
               </div>
@@ -476,12 +721,25 @@ export const MaterialOrders: React.FC<MaterialOrdersProps> = ({ orders, works, t
   );
 };
 
-const OrderItem = ({ order, works, users, onNext, isFinal }: { order: MaterialOrder, works: ConstructionWork[], users: User[], onNext?: () => void, isFinal?: boolean }) => {
+interface OrderItemProps {
+  order: MaterialOrder;
+  works: ConstructionWork[];
+  users: User[];
+  onNext?: () => void;
+  onClick?: () => void; // For generic click (open modal)
+  isFinal?: boolean;
+}
+
+const OrderItem: React.FC<OrderItemProps> = ({ order, works, users, onNext, onClick, isFinal }) => {
     const work = works.find(w => w.id === order.workId);
     const user = users.find(u => u.id === order.requesterId);
+    const supplier = users.find(u => u.id === order.supplierId);
 
     return (
-        <div className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 group hover:shadow-md transition-all relative">
+        <div 
+            className={`bg-white p-3 rounded-lg shadow-sm border border-slate-200 group hover:shadow-md transition-all relative ${onClick ? 'cursor-pointer hover:border-pms-300' : ''}`}
+            onClick={onClick}
+        >
              <div className="flex justify-between items-start mb-1">
                  <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
                      order.priority === TaskPriority.HIGH ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
@@ -495,8 +753,19 @@ const OrderItem = ({ order, works, users, onNext, isFinal }: { order: MaterialOr
                  {order.quantity} <span className="text-xs font-normal text-slate-500">{order.unit}</span> {order.itemName}
              </h4>
              
-             <div className="text-xs text-slate-500 mb-2 flex items-center gap-1">
-                 <Truck size={12} /> {work?.name}
+             <div className="text-xs text-slate-500 mb-2 flex flex-col gap-0.5">
+                 <span className="flex items-center gap-1"><Truck size={12} /> {work?.name}</span>
+                 {supplier && (
+                     <span className="flex items-center gap-1 text-purple-600 bg-purple-50 px-1 rounded self-start">
+                         Forn: {supplier.name}
+                     </span>
+                 )}
+                 {/* Quote Indicator */}
+                 {order.status === OrderStatus.QUOTING && (order.quotes?.length || 0) > 0 && (
+                     <span className="text-xs text-yellow-600 font-bold bg-yellow-50 px-1 rounded w-fit mt-1">
+                         {order.quotes?.length} Cotações
+                     </span>
+                 )}
              </div>
 
              <div className="flex items-center justify-between pt-2 border-t border-slate-50">
@@ -507,7 +776,10 @@ const OrderItem = ({ order, works, users, onNext, isFinal }: { order: MaterialOr
                  
                  {!isFinal && (
                      <button 
-                        onClick={onNext}
+                        onClick={(e) => {
+                            e.stopPropagation(); // Prevent card click
+                            if(onNext) onNext();
+                        }}
                         className="p-1 rounded bg-slate-100 hover:bg-pms-600 hover:text-white text-slate-400 transition-colors"
                         title="Avançar Status"
                      >

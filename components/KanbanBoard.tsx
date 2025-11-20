@@ -1,37 +1,47 @@
+
 import React, { useState } from 'react';
-import { Task, TaskStatus, TaskPriority, User, UserRole } from '../types';
-import { AlertCircle, CheckCircle2, Clock, Camera, MoreHorizontal, Plus, User as UserIcon, BrainCircuit } from 'lucide-react';
+import { Task, TaskStatusDefinition, TaskPriority, User, TaskStatus } from '../types';
+import { AlertCircle, BrainCircuit, Plus } from 'lucide-react';
 import { analyzeTaskContent } from '../services/geminiService';
 
 interface KanbanBoardProps {
   tasks: Task[];
   users: User[];
   currentUser: User;
+  taskStatuses: TaskStatusDefinition[];
   onUpdateTask: (task: Task) => void;
   onAddTask: (task: Task) => void;
   workId: string;
 }
 
-const STATUS_COLUMNS = [
-  { id: TaskStatus.BACKLOG, label: 'Backlog', color: 'bg-gray-100 border-gray-200' },
-  { id: TaskStatus.PLANNING, label: 'Planejamento', color: 'bg-blue-50 border-blue-100' },
-  { id: TaskStatus.EXECUTION, label: 'Execução (Pedro)', color: 'bg-orange-50 border-orange-100' },
-  { id: TaskStatus.WAITING_MATERIAL, label: 'Aguar. Material', color: 'bg-yellow-50 border-yellow-100' },
-  { id: TaskStatus.NC, label: 'Não Conformidade', color: 'bg-red-50 border-red-100' },
-  { id: TaskStatus.DONE, label: 'Concluído', color: 'bg-green-50 border-green-100' },
-];
+const getColorClasses = (scheme: string) => {
+  switch (scheme) {
+    case 'blue': return 'bg-blue-50 border-blue-100';
+    case 'green': return 'bg-green-50 border-green-100';
+    case 'orange': return 'bg-orange-50 border-orange-100';
+    case 'red': return 'bg-red-50 border-red-100';
+    case 'yellow': return 'bg-yellow-50 border-yellow-100';
+    case 'purple': return 'bg-purple-50 border-purple-100';
+    default: return 'bg-gray-100 border-gray-200';
+  }
+};
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentUser, onUpdateTask, onAddTask, workId }) => {
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentUser, taskStatuses, onUpdateTask, onAddTask, workId }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  const handleStatusChange = (task: Task, newStatus: TaskStatus) => {
-    const updatedTask = { ...task, status: newStatus };
+  const handleStatusChange = (task: Task, newStatus: string) => {
+    const updatedTask: Task = { ...task, status: newStatus };
+    
     if (newStatus === TaskStatus.DONE) {
-      // Could add logic here to set completion date
+      updatedTask.completedDate = new Date().toISOString().split('T')[0];
+    } else {
+      // Optional: Clear completed date if moved back from DONE
+      // updatedTask.completedDate = undefined; 
     }
+
     onUpdateTask(updatedTask);
   };
 
@@ -79,11 +89,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
       {/* Horizontal Scrollable Kanban */}
       <div className="flex-1 overflow-x-auto kanban-scroll pb-4">
         <div className="flex gap-4 min-w-max px-2 h-full">
-          {STATUS_COLUMNS.map((col) => {
+          {taskStatuses.map((col) => {
             const colTasks = tasks.filter(t => t.status === col.id);
+            const colorClass = getColorClasses(col.colorScheme);
             
             return (
-              <div key={col.id} className={`w-72 md:w-80 flex-shrink-0 flex flex-col rounded-xl border ${col.color} h-full max-h-[calc(100vh-220px)]`}>
+              <div key={col.id} className={`w-72 md:w-80 flex-shrink-0 flex flex-col rounded-xl border ${colorClass} h-full max-h-[calc(100vh-220px)]`}>
                 <div className="p-3 font-bold text-slate-700 border-b border-slate-200/50 flex justify-between items-center sticky top-0 bg-inherit rounded-t-xl z-10">
                   <span>{col.label}</span>
                   <span className="bg-white/50 px-2 py-0.5 rounded-full text-xs text-slate-500 border border-slate-200">
@@ -130,11 +141,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
                          {/* Simple Mobile Friendly Status Mover */}
                          <select 
                             value={task.status}
-                            onChange={(e) => handleStatusChange(task, e.target.value as TaskStatus)}
+                            onChange={(e) => handleStatusChange(task, e.target.value)}
                             className="text-xs bg-slate-50 border border-slate-200 rounded px-1 py-1 max-w-[120px] truncate focus:outline-none focus:ring-1 focus:ring-pms-500"
                          >
-                            {Object.values(TaskStatus).map(s => (
-                                <option key={s} value={s}>{s}</option>
+                            {taskStatuses.map(s => (
+                                <option key={s.id} value={s.id}>{s.label}</option>
                             ))}
                          </select>
                       </div>

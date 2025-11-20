@@ -7,6 +7,8 @@ export enum UserRole {
   VIEWER = 'VIEWER' // Apenas Visualização Geral
 }
 
+export type UserCategory = 'EMPLOYEE' | 'CLIENT' | 'SUPPLIER';
+
 export interface AppPermissions {
   viewDashboard: boolean;
   viewWorks: boolean;
@@ -31,10 +33,17 @@ export interface UserProfile {
 export interface User {
   id: string;
   name: string;
-  role: UserRole; // Kept for backward compatibility with components using Enums
+  category: UserCategory; // Classification
+  role: UserRole; // System Access Role
   profileId: string; // Links to UserProfile
   avatar: string;
   email: string;
+  // New Fields
+  cpf?: string;
+  address?: string;
+  phone?: string;
+  birthDate?: string;
+  notes?: string;
 }
 
 export enum WorkStatus {
@@ -47,7 +56,8 @@ export enum WorkStatus {
 export interface ConstructionWork {
   id: string;
   name: string;
-  client: string;
+  client: string; // Stored as name for display, but ideally linked to User ID
+  clientId?: string; // Link to User ID
   address: string;
   status: WorkStatus;
   progress: number; // 0-100
@@ -59,16 +69,24 @@ export interface ConstructionWork {
   teamIds?: string[]; // IDs of users assigned to this work
 }
 
+// Enum kept for ID references, but UI will be dynamic
 export enum TaskStatus {
   BACKLOG = 'Backlog',
   PLANNING = 'Planejamento',
-  EXECUTION = 'Execução (Pedro)',
+  EXECUTION = 'Execução',
   WAITING_MARCOS = 'Aguardando Marcos',
   PURCHASE_LOGISTICS = 'Compra & Logística',
   WAITING_MATERIAL = 'Aguardando Material',
   NC = 'Não Conformidade',
   PHOTO_REGISTRY = 'Registro Fotográfico',
   DONE = 'Concluído'
+}
+
+export interface TaskStatusDefinition {
+  id: string;
+  label: string;
+  colorScheme: 'gray' | 'blue' | 'orange' | 'yellow' | 'red' | 'green' | 'purple';
+  order: number;
 }
 
 export enum TaskPriority {
@@ -82,10 +100,11 @@ export interface Task {
   workId: string;
   title: string;
   description: string;
-  status: TaskStatus;
+  status: string; // Changed from TaskStatus enum to string to support dynamic statuses
   priority: TaskPriority;
   assignedTo?: string; // User ID
   dueDate: string;
+  completedDate?: string; // Date when status became DONE
   images: string[];
   aiAnalysis?: string; // Stores Gemini analysis
 }
@@ -106,6 +125,7 @@ export enum FinanceCategory {
 export interface FinancialRecord {
   id: string;
   workId: string;
+  entityId?: string; // ID of the Supplier or Client associated
   type: FinanceType;
   description: string;
   category: FinanceCategory;
@@ -134,11 +154,18 @@ export enum OrderStatus {
   DELIVERED = 'Entregue no Local'
 }
 
+export interface MaterialQuote {
+  id: string;
+  supplierId: string;
+  price: number;
+}
+
 export interface MaterialOrder {
   id: string;
   workId: string;
   taskId?: string; // Optional link to a specific task
   requesterId: string; // User ID who requested
+  supplierId?: string; // Preferred or selected supplier
   itemName: string;
   quantity: number;
   unit: string; // e.g., 'kg', 'saco', 'm', 'un'
@@ -150,4 +177,18 @@ export interface MaterialOrder {
   estimatedCost?: number; // For quoting
   finalCost?: number; // Actual cost when purchased
   notes?: string;
+  // Quotation Logic
+  quotes?: MaterialQuote[];
+  selectedQuoteId?: string;
+}
+
+// --- CATALOG ---
+export interface Material {
+  id: string;
+  name: string;
+  category: string; // e.g., 'Alvenaria', 'Elétrica'
+  unit: string; // Default unit
+  brand?: string;
+  priceEstimate?: number;
+  description?: string;
 }

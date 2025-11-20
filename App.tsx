@@ -1,21 +1,25 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder } from './types';
-import { MOCK_USERS, MOCK_WORKS, MOCK_TASKS, MOCK_FINANCE, MOCK_LOGS, MOCK_PROFILES, MOCK_ORDERS } from './constants';
+import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder, TaskStatusDefinition, TaskStatus, Material } from './types';
+import { MOCK_USERS, MOCK_WORKS, MOCK_TASKS, MOCK_FINANCE, MOCK_LOGS, MOCK_PROFILES, MOCK_ORDERS, DEFAULT_TASK_STATUSES, MOCK_MATERIALS } from './constants';
 import { KanbanBoard } from './components/KanbanBoard';
 import { FinanceView } from './components/FinanceView';
 import { DailyLogView } from './components/DailyLog';
 import { UserManagement } from './components/UserManagement';
 import { GlobalTaskList } from './components/GlobalTaskList';
 import { MaterialOrders } from './components/MaterialOrders';
-import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, Landmark, Bell, Users, ListTodo, CheckCircle2, Calendar, Edit, Save, Image as ImageIcon, ExternalLink, Package, Plus, ChevronDown, ArrowLeft } from 'lucide-react';
+import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, Landmark, Bell, Users, ListTodo, CheckCircle2, Calendar, Edit, Save, Image as ImageIcon, ExternalLink, Package, Plus, ChevronDown, ArrowLeft, Archive, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon } from 'lucide-react';
 
 // --- Main App Component ---
 
 const App: React.FC = () => {
   // Global State
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); // Default to Marcos
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'WORKS' | 'FINANCE' | 'USERS' | 'ALL_TASKS' | 'MATERIALS'>('DASHBOARD');
+  
+  // Navigation State
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'WORKS' | 'HISTORY' | 'FINANCE' | 'REGISTRATIONS' | 'ALL_TASKS' | 'MATERIALS'>('DASHBOARD');
+  const [registrationSubTab, setRegistrationSubTab] = useState<'HUB' | 'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'MATERIALS' | 'SETTINGS'>('HUB');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   
   // Data State (Simulating DB)
@@ -26,6 +30,8 @@ const App: React.FC = () => {
   const [finance, setFinance] = useState<FinancialRecord[]>(MOCK_FINANCE);
   const [logs, setLogs] = useState<DailyLog[]>(MOCK_LOGS);
   const [orders, setOrders] = useState<MaterialOrder[]>(MOCK_ORDERS);
+  const [materials, setMaterials] = useState<Material[]>(MOCK_MATERIALS);
+  const [taskStatuses, setTaskStatuses] = useState<TaskStatusDefinition[]>(DEFAULT_TASK_STATUSES);
 
   // Work Detail Tab State
   const [workTab, setWorkTab] = useState<'OVERVIEW' | 'KANBAN' | 'FINANCE' | 'LOGS'>('OVERVIEW');
@@ -35,8 +41,20 @@ const App: React.FC = () => {
   const [isEditWorkModalOpen, setIsEditWorkModalOpen] = useState(false);
   const [editingWork, setEditingWork] = useState<ConstructionWork | null>(null);
 
+  // --- Computed Data: Visibility ---
+  // Filter works based on user role. Clients see only their works. Others see all.
+  const visibleWorks = useMemo(() => {
+      if (currentUser.role === UserRole.CLIENT || currentUser.category === 'CLIENT') {
+          return works.filter(w => w.clientId === currentUser.id);
+      }
+      return works;
+  }, [works, currentUser]);
+
   // --- Helpers & Permissions ---
-  const selectedWork = works.find(w => w.id === selectedWorkId);
+  // We search in 'works' generally, but access is implicitly restricted by UI. 
+  // Security-wise, we could restrict selection here too.
+  const selectedWork = visibleWorks.find(w => w.id === selectedWorkId);
+  
   const activeTasks = tasks.filter(t => t.workId === selectedWorkId);
   const activeFinance = finance.filter(f => f.workId === selectedWorkId);
   const activeLogs = logs.filter(l => l.workId === selectedWorkId);
@@ -59,6 +77,9 @@ const App: React.FC = () => {
 
     return finance.filter(record => {
       if (record.status !== 'Pendente') return false;
+      // Ensure we only show alerts for visible works
+      const isVisibleWork = visibleWorks.some(w => w.id === record.workId);
+      if (!isVisibleWork) return false;
 
       // Parse date manually to ensure local timezone comparison
       const [y, m, d] = record.dueDate.split('-').map(Number);
@@ -70,7 +91,7 @@ const App: React.FC = () => {
       // "Vencendo em 2 dias" covers today (0), tomorrow (1), and day after (2) + overdue (negative)
       return diffDays <= 2;
     }).sort((a,b) => a.dueDate.localeCompare(b.dueDate));
-  }, [finance, currentUser, profiles]); // Depend on profiles/user changes
+  }, [finance, currentUser, profiles, visibleWorks]); 
 
   // --- Handlers ---
 
@@ -149,6 +170,25 @@ const App: React.FC = () => {
       }
   };
 
+  const handleUpdateStatuses = (newStatuses: TaskStatusDefinition[]) => {
+    setTaskStatuses(newStatuses);
+  };
+
+  // Material Catalog Handlers
+  const handleAddMaterial = (newMaterial: Material) => {
+      setMaterials(prev => [...prev, newMaterial]);
+  };
+  
+  const handleUpdateMaterial = (updatedMaterial: Material) => {
+      setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? updatedMaterial : m));
+  };
+
+  const handleDeleteMaterial = (materialId: string) => {
+      if (window.confirm('Tem certeza que deseja excluir este material do catálogo?')) {
+          setMaterials(prev => prev.filter(m => m.id !== materialId));
+      }
+  };
+
   // Material Order Handlers
   const handleAddOrder = (newOrder: MaterialOrder) => {
     if (!hasPermission('manageMaterials')) { alert("Sem permissão."); return; }
@@ -177,6 +217,7 @@ const App: React.FC = () => {
         id: '', // Empty ID signals new work
         name: '',
         client: '',
+        clientId: '',
         address: '',
         status: WorkStatus.PLANNING,
         progress: 0,
@@ -234,11 +275,77 @@ const App: React.FC = () => {
   // --- Views ---
 
   const renderDashboard = () => {
+    // Only show active works in dashboard (using visibleWorks for permission filtering)
+    const activeWorksList = visibleWorks.filter(w => w.status !== WorkStatus.COMPLETED);
+    
+    // Work Status Counters (Visible works only)
+    const workStats = {
+        execution: visibleWorks.filter(w => w.status === WorkStatus.EXECUTION).length,
+        planning: visibleWorks.filter(w => w.status === WorkStatus.PLANNING).length,
+        paused: visibleWorks.filter(w => w.status === WorkStatus.PAUSED).length,
+        completed: visibleWorks.filter(w => w.status === WorkStatus.COMPLETED).length,
+    };
+
     return (
       <div className="p-6 space-y-6 animate-fade-in pb-20">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-800">Bem-vindo, {currentUser.name.split(' ')[0]}</h1>
           <p className="text-slate-500">Visão geral das operações da PMS Construtora.</p>
+        </div>
+
+        {/* Status Overview Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Execução */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div>
+                <div>
+                    <span className="text-xs font-bold text-slate-500 uppercase">Em Execução</span>
+                    <div className="text-2xl font-bold text-slate-800 mt-1">{workStats.execution}</div>
+                </div>
+                <div className="p-2 bg-green-50 text-green-600 rounded-lg group-hover:scale-110 transition-transform">
+                    <Hammer size={20} />
+                </div>
+            </div>
+
+            {/* Planejamento */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
+                <div>
+                    <span className="text-xs font-bold text-slate-500 uppercase">Planejamento</span>
+                    <div className="text-2xl font-bold text-slate-800 mt-1">{workStats.planning}</div>
+                </div>
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg group-hover:scale-110 transition-transform">
+                    <ClipboardList size={20} />
+                </div>
+            </div>
+
+            {/* Pausadas */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-500"></div>
+                <div>
+                    <span className="text-xs font-bold text-slate-500 uppercase">Pausadas</span>
+                    <div className="text-2xl font-bold text-slate-800 mt-1">{workStats.paused}</div>
+                </div>
+                <div className="p-2 bg-orange-50 text-orange-600 rounded-lg group-hover:scale-110 transition-transform">
+                    <PauseCircle size={20} />
+                </div>
+            </div>
+
+             {/* Concluídas */}
+             <div 
+                onClick={() => setActiveTab('HISTORY')}
+                className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-all cursor-pointer"
+             >
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-400"></div>
+                <div>
+                    <span className="text-xs font-bold text-slate-500 uppercase group-hover:text-pms-600 transition-colors">Concluídas</span>
+                    <div className="text-2xl font-bold text-slate-800 mt-1">{workStats.completed}</div>
+                </div>
+                <div className="p-2 bg-slate-100 text-slate-500 rounded-lg group-hover:scale-110 transition-transform group-hover:bg-pms-50 group-hover:text-pms-600">
+                    <CheckCircle2 size={20} />
+                </div>
+                <ExternalLink size={12} className="absolute top-2 right-2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
         </div>
 
         {/* Financial Alerts (Incomes and Expenses) */}
@@ -289,20 +396,8 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Stats Row with Clickable Shortcuts */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Obras Ativas -> Obras */}
-          <div 
-            onClick={() => { setSelectedWorkId(null); setActiveTab('WORKS'); }}
-            className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all group"
-          >
-            <span className="text-slate-500 text-xs font-bold uppercase group-hover:text-pms-600 transition-colors">Obras Ativas</span>
-            <div className="flex items-end justify-between mt-2">
-              <span className="text-3xl font-bold text-pms-900">{works.filter(w => w.status === 'Execução').length}</span>
-              <Hammer className="text-pms-500 opacity-20 mb-1 group-hover:opacity-100 transition-opacity" size={24} />
-            </div>
-          </div>
-
+        {/* Quick Access & Global Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Tarefas Abertas -> Tarefas Gerais (Se tiver permissao) */}
           <div 
             onClick={() => { 
@@ -313,7 +408,7 @@ const App: React.FC = () => {
             }}
             className={`bg-white p-4 rounded-xl border border-slate-200 shadow-sm group ${hasPermission('viewGlobalTasks') ? 'cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all' : ''}`}
           >
-            <span className={`text-slate-500 text-xs font-bold uppercase ${hasPermission('viewGlobalTasks') ? 'group-hover:text-pms-600' : ''} transition-colors`}>Tarefas Abertas</span>
+            <span className={`text-slate-500 text-xs font-bold uppercase ${hasPermission('viewGlobalTasks') ? 'group-hover:text-pms-600' : ''} transition-colors`}>Tarefas Totais</span>
             <div className="flex items-end justify-between mt-2">
               <span className="text-3xl font-bold text-pms-900">{tasks.length}</span>
               <Briefcase className={`text-pms-500 opacity-20 mb-1 ${hasPermission('viewGlobalTasks') ? 'group-hover:opacity-100' : ''} transition-opacity`} size={24} />
@@ -369,11 +464,14 @@ const App: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Works List Quick View */}
+          {/* Works List Quick View (Filtered) */}
           <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-                <h3 className="font-bold text-slate-800">Obras em Andamento</h3>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-slate-800">Obras em Andamento</h3>
+                </div>
+                
+                <div className="flex items-center gap-2">
                     {hasPermission('manageWorks') && (
                         <button 
                             onClick={handleOpenCreateWorkModal}
@@ -386,9 +484,15 @@ const App: React.FC = () => {
                 </div>
              </div>
              <div className="p-4 grid grid-cols-1 gap-4">
-                {works.map(work => (
+                {activeWorksList.length === 0 && (
+                    <div className="text-center py-8 text-slate-400">
+                        <HardHat size={48} className="mx-auto mb-2 opacity-20"/>
+                        <p>Nenhuma obra ativa encontrada.</p>
+                    </div>
+                )}
+                {activeWorksList.map(work => (
                     <div key={work.id} onClick={() => navigateToWorkBoard(work.id)} className="group flex items-center gap-4 p-3 rounded-lg border border-slate-100 hover:border-pms-200 hover:bg-pms-50 transition-all cursor-pointer">
-                        <div className="h-16 w-24 rounded-lg overflow-hidden shrink-0 relative">
+                        <div className={`h-16 w-24 rounded-lg overflow-hidden shrink-0 relative`}>
                             <img src={work.imageUrl} alt={work.name} className="h-full w-full object-cover" />
                             <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
                         </div>
@@ -397,7 +501,7 @@ const App: React.FC = () => {
                             <p className="text-sm text-slate-500">{work.client}</p>
                             <div className="flex items-center gap-2 mt-1">
                                 <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                    <div className="h-full bg-pms-500 rounded-full" style={{ width: `${work.progress}%` }}></div>
+                                    <div className={`h-full rounded-full bg-pms-500`} style={{ width: `${work.progress}%` }}></div>
                                 </div>
                                 <span className="text-xs font-bold text-slate-600">{work.progress}%</span>
                             </div>
@@ -405,7 +509,8 @@ const App: React.FC = () => {
                         <div className="text-right">
                             <span className={`px-2 py-1 rounded-full text-xs font-bold ${
                                 work.status === WorkStatus.EXECUTION ? 'bg-green-100 text-green-700' : 
-                                work.status === WorkStatus.PLANNING ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                                work.status === WorkStatus.PLANNING ? 'bg-blue-100 text-blue-700' :
+                                'bg-slate-100 text-slate-600'
                             }`}>
                                 {work.status}
                             </span>
@@ -423,7 +528,10 @@ const App: React.FC = () => {
              </div>
              <div className="p-4 space-y-4">
                 {logs.slice(0, 3).map(log => {
-                    const w = works.find(w => w.id === log.workId);
+                    // Only show logs for visible works
+                    const w = visibleWorks.find(w => w.id === log.workId);
+                    if (!w) return null;
+                    
                     return (
                         <div key={log.id} className="flex gap-3 pb-3 border-b border-slate-50 last:border-0 last:pb-0">
                            <div className="mt-1">
@@ -432,13 +540,13 @@ const App: React.FC = () => {
                                </div>
                            </div>
                            <div>
-                               <p className="text-xs font-bold text-slate-500 uppercase mb-0.5">{w?.name}</p>
+                               <p className="text-xs font-bold text-slate-500 uppercase mb-0.5">{w.name}</p>
                                <p className="text-sm text-slate-700 line-clamp-2">{log.content}</p>
                            </div>
                         </div>
                     );
                 })}
-                {logs.length === 0 && <p className="text-slate-400 text-center py-4">Nenhum registro recente.</p>}
+                {logs.filter(l => visibleWorks.some(w => w.id === l.workId)).length === 0 && <p className="text-slate-400 text-center py-4">Nenhum registro recente.</p>}
              </div>
           </div>
         </div>
@@ -446,15 +554,225 @@ const App: React.FC = () => {
     );
   };
 
+  const renderHistoryView = () => {
+      // Use visibleWorks so client only sees their own history
+      const completedWorks = visibleWorks.filter(w => w.status === WorkStatus.COMPLETED);
+
+      return (
+          <div className="p-6 space-y-6 animate-fade-in pb-20">
+              <div className="mb-6 border-b border-slate-200 pb-4">
+                  <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                      <History size={28} className="text-slate-400" />
+                      Histórico de Obras
+                  </h2>
+                  <p className="text-slate-500 mt-1">Arquivo de projetos concluídos e entregues.</p>
+              </div>
+
+              {completedWorks.length === 0 ? (
+                  <div className="text-center py-20 bg-slate-50 rounded-2xl border border-dashed border-slate-300">
+                      <Archive size={64} className="mx-auto mb-4 text-slate-300" />
+                      <h3 className="text-lg font-bold text-slate-600">Nenhuma obra no histórico</h3>
+                      <p className="text-slate-400">As obras marcadas como "Concluída" aparecerão aqui.</p>
+                  </div>
+              ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {completedWorks.map(work => (
+                          <div 
+                            key={work.id} 
+                            onClick={() => navigateToWorkBoard(work.id)}
+                            className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group cursor-pointer hover:shadow-md transition-all"
+                          >
+                              <div className="h-40 relative grayscale group-hover:grayscale-0 transition-all duration-500">
+                                  <img src={work.imageUrl} alt={work.name} className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors" />
+                                  <div className="absolute top-3 right-3 bg-white/90 px-2 py-1 rounded text-xs font-bold text-slate-700 shadow-sm">
+                                      Entregue em: {new Date(work.endDate).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
+                                  </div>
+                              </div>
+                              <div className="p-5">
+                                  <h3 className="font-bold text-lg text-slate-800 mb-1 group-hover:text-pms-600 transition-colors">{work.name}</h3>
+                                  <p className="text-sm text-slate-500 mb-4 flex items-center gap-1"><UserIcon size={14} /> {work.client}</p>
+                                  
+                                  <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                                      <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full uppercase">Concluída</span>
+                                      <button className="text-sm font-bold text-slate-400 group-hover:text-pms-600 flex items-center gap-1 transition-colors">
+                                          Acessar <ChevronRight size={16} />
+                                      </button>
+                                  </div>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              )}
+          </div>
+      );
+  };
+
+  const renderRegistrationHub = () => {
+      // If we are in a specific sub-tab, render UserManagement
+      if (registrationSubTab !== 'HUB') {
+          return (
+              <div className="h-full flex flex-col">
+                  <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4">
+                      <button 
+                        onClick={() => setRegistrationSubTab('HUB')}
+                        className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
+                        title="Voltar para o Menu"
+                      >
+                          <ArrowLeft size={20} />
+                      </button>
+                      <h2 className="text-lg font-bold text-slate-800">
+                          {registrationSubTab === 'EMPLOYEES' ? 'Gestão de Funcionários' : 
+                           registrationSubTab === 'CLIENTS' ? 'Gestão de Clientes' : 
+                           registrationSubTab === 'SUPPLIERS' ? 'Gestão de Fornecedores' : 
+                           registrationSubTab === 'PROFILES' ? 'Perfis de Acesso' : 
+                           registrationSubTab === 'MATERIALS' ? 'Catálogo de Materiais' : 'Configurações do Sistema'}
+                      </h2>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    <UserManagement 
+                        users={users} 
+                        profiles={profiles}
+                        materials={materials}
+                        orders={orders}
+                        initialTab={registrationSubTab}
+                        taskStatuses={taskStatuses}
+                        onAddUser={handleAddUser}
+                        onUpdateUser={handleUpdateUser}
+                        onDeleteUser={handleDeleteUser}
+                        onAddProfile={handleAddProfile}
+                        onUpdateProfile={handleUpdateProfile}
+                        onDeleteProfile={handleDeleteProfile}
+                        onUpdateStatuses={handleUpdateStatuses}
+                        onAddMaterial={handleAddMaterial}
+                        onUpdateMaterial={handleUpdateMaterial}
+                        onDeleteMaterial={handleDeleteMaterial}
+                    />
+                  </div>
+              </div>
+          );
+      }
+
+      // Hub View
+      return (
+          <div className="p-6 md:p-12 animate-fade-in max-w-6xl mx-auto">
+              <div className="text-center mb-12">
+                  <h2 className="text-3xl font-bold text-slate-800 mb-2">Central de Cadastros</h2>
+                  <p className="text-slate-500 text-lg">Selecione o tipo de cadastro que deseja gerenciar</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                  {/* Employees */}
+                  <button 
+                    onClick={() => setRegistrationSubTab('EMPLOYEES')}
+                    className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
+                  >
+                      <div className="w-16 h-16 rounded-full bg-green-50 text-green-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                          <HardHat size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-green-600 transition-colors">Funcionários</h3>
+                      <span className="text-xs font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {users.filter(u => u.category === 'EMPLOYEE').length}
+                      </span>
+                  </button>
+
+                  {/* Clients */}
+                  <button 
+                    onClick={() => setRegistrationSubTab('CLIENTS')}
+                    className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
+                  >
+                      <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                          <Contact size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-blue-600 transition-colors">Clientes</h3>
+                      <span className="text-xs font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {users.filter(u => u.category === 'CLIENT').length}
+                      </span>
+                  </button>
+
+                  {/* Suppliers */}
+                  <button 
+                    onClick={() => setRegistrationSubTab('SUPPLIERS')}
+                    className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
+                  >
+                      <div className="w-16 h-16 rounded-full bg-orange-50 text-orange-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                          <Truck size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-orange-600 transition-colors">Fornecedores</h3>
+                      <span className="text-xs font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {users.filter(u => u.category === 'SUPPLIER').length}
+                      </span>
+                  </button>
+
+                  {/* Materials Catalog */}
+                  <button 
+                    onClick={() => setRegistrationSubTab('MATERIALS')}
+                    className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
+                  >
+                      <div className="w-16 h-16 rounded-full bg-cyan-50 text-cyan-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                          <Package size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-cyan-600 transition-colors">Catálogo de Materiais</h3>
+                      <span className="text-xs font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {materials.length} Itens
+                      </span>
+                  </button>
+
+                  {/* New Work Button */}
+                  {hasPermission('manageWorks') && (
+                    <button 
+                      onClick={handleOpenCreateWorkModal}
+                      className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
+                    >
+                        <div className="w-16 h-16 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <Hammer size={32} />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-purple-600 transition-colors">Nova Obra</h3>
+                        <span className="text-xs font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                            Cadastrar Projeto
+                        </span>
+                    </button>
+                  )}
+                  
+                  {/* Settings / Statuses */}
+                  <button 
+                    onClick={() => setRegistrationSubTab('SETTINGS')}
+                    className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
+                  >
+                      <div className="w-16 h-16 rounded-full bg-slate-50 text-slate-600 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                          <Settings size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800 mb-1 group-hover:text-slate-600 transition-colors">Configurações</h3>
+                      <span className="text-xs font-bold uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                          Status & Mais
+                      </span>
+                  </button>
+              </div>
+
+              {hasPermission('manageUsers') && (
+                  <div className="mt-12 flex justify-center">
+                      <button 
+                        onClick={() => setRegistrationSubTab('PROFILES')}
+                        className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors text-sm font-bold uppercase tracking-wider hover:bg-slate-100 px-4 py-2 rounded-lg"
+                      >
+                          <Shield size={16} /> Gerenciar Perfis de Acesso
+                      </button>
+                  </div>
+              )}
+          </div>
+      );
+  };
+
   const renderWorkBoard = () => {
     if (!selectedWork) return null;
 
+    // ... (Keep existing WorkBoard Logic, just returning the JSX)
     return (
       <div className="h-full flex flex-col animate-fade-in">
         {/* Work Header */}
         <div className="bg-white border-b border-slate-200 px-4 py-3 flex flex-col md:flex-row justify-between md:items-center gap-3 shrink-0">
            <div className="flex items-center gap-3">
-               <button onClick={() => { setSelectedWorkId(null); setActiveTab('DASHBOARD'); }} className="md:hidden p-2 -ml-2 text-slate-400">
+               <button onClick={() => { setSelectedWorkId(null); }} className="md:hidden p-2 -ml-2 text-slate-400">
                    <ArrowLeft size={24} />
                </button>
                <h2 className="text-xl md:text-2xl font-bold text-slate-800 truncate max-w-[200px] md:max-w-md">{selectedWork.name}</h2>
@@ -623,6 +941,7 @@ const App: React.FC = () => {
                         tasks={activeTasks} 
                         users={users}
                         currentUser={currentUser}
+                        taskStatuses={taskStatuses}
                         onUpdateTask={handleUpdateTask}
                         onAddTask={handleAddTask}
                         workId={selectedWork.id}
@@ -635,6 +954,7 @@ const App: React.FC = () => {
                     <FinanceView 
                         records={activeFinance}
                         currentUser={currentUser}
+                        users={users} // Pass Users for Supplier linking
                         work={selectedWork}
                         onAddRecord={handleAddFinanceRecord}
                         onUpdateRecord={handleUpdateFinanceRecord}
@@ -675,6 +995,9 @@ const App: React.FC = () => {
                     <HardHat size={24} /> Obras
                 </button>
               )}
+               <button onClick={() => { setSelectedWorkId(null); setActiveTab('HISTORY'); setMobileMenuOpen(false); }} className="flex items-center gap-3 text-slate-300 hover:text-white text-lg w-full">
+                  <History size={24} /> Histórico
+              </button>
               {hasPermission('viewGlobalTasks') && (
                   <button onClick={() => { setSelectedWorkId(null); setActiveTab('ALL_TASKS'); setMobileMenuOpen(false); }} className="flex items-center gap-3 text-slate-300 hover:text-white text-lg w-full">
                     <ListTodo size={24} /> Tarefas
@@ -685,14 +1008,23 @@ const App: React.FC = () => {
                     <Wallet size={24} /> Financeiro
                   </button>
               )}
+              {hasPermission('viewMaterials') && (
+                  <button onClick={() => { setSelectedWorkId(null); setActiveTab('MATERIALS'); setMobileMenuOpen(false); }} className="flex items-center gap-3 text-slate-300 hover:text-white text-lg w-full">
+                      <Package size={24} /> Materiais
+                  </button>
+              )}
               {hasPermission('manageUsers') && (
-                  <button onClick={() => { setSelectedWorkId(null); setActiveTab('USERS'); setMobileMenuOpen(false); }} className="flex items-center gap-3 text-slate-300 hover:text-white text-lg w-full">
-                      <Users size={24} /> Equipe
+                  <button onClick={() => { setSelectedWorkId(null); setActiveTab('REGISTRATIONS'); setRegistrationSubTab('HUB'); setMobileMenuOpen(false); }} className="flex items-center gap-3 text-slate-300 hover:text-white text-lg w-full">
+                      <Users size={24} /> Cadastros
                   </button>
               )}
           </nav>
       </div>
   );
+
+  // Side Nav Helper: Organize works by status (ONLY ACTIVE)
+  // Use visibleWorks here as well for sidebar
+  const activeSidebarWorks = visibleWorks.filter(w => w.status !== WorkStatus.COMPLETED);
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
@@ -712,8 +1044,8 @@ const App: React.FC = () => {
           
           {hasPermission('viewWorks') && (
               <>
-                <div className="pt-4 pb-2 px-4 text-xs font-bold text-slate-500 uppercase">Obras</div>
-                {works.map(w => (
+                <div className="pt-4 pb-2 px-4 text-xs font-bold text-slate-500 uppercase">Obras Ativas</div>
+                {activeSidebarWorks.map(w => (
                     <button 
                         key={w.id}
                         onClick={() => navigateToWorkBoard(w.id)}
@@ -723,10 +1055,26 @@ const App: React.FC = () => {
                         {selectedWorkId === w.id && <ChevronRight size={14} />}
                     </button>
                 ))}
+                
+                {/* History Button */}
+                <NavButton 
+                   active={activeTab === 'HISTORY' && !selectedWorkId} 
+                   onClick={() => { setSelectedWorkId(null); setActiveTab('HISTORY'); }} 
+                   icon={<History size={20} />} label="Histórico de Obras" 
+                />
               </>
           )}
 
           <div className="pt-4 pb-2 px-4 text-xs font-bold text-slate-500 uppercase">Gestão</div>
+          
+          {hasPermission('manageUsers') && (
+              <NavButton 
+                  active={activeTab === 'REGISTRATIONS'} 
+                  onClick={() => { setSelectedWorkId(null); setActiveTab('REGISTRATIONS'); setRegistrationSubTab('HUB'); }} 
+                  icon={<Users size={20} />} label="Cadastros" 
+              />
+          )}
+
           {hasPermission('viewGlobalTasks') && (
              <NavButton 
                 active={activeTab === 'ALL_TASKS'} 
@@ -748,13 +1096,6 @@ const App: React.FC = () => {
                 icon={<Package size={20} />} label="Materiais" 
              />
           )}
-          {hasPermission('manageUsers') && (
-             <NavButton 
-                active={activeTab === 'USERS'} 
-                onClick={() => { setSelectedWorkId(null); setActiveTab('USERS'); }} 
-                icon={<Users size={20} />} label="Equipe & Acesso" 
-             />
-          )}
         </nav>
 
         <div className="p-4 border-t border-slate-800">
@@ -762,7 +1103,7 @@ const App: React.FC = () => {
             <div className="mb-4 px-2">
                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Simular Usuário</label>
                 <select 
-                    className="w-full bg-slate-800 border border-slate-700 rounded text-xs p-2 text-white outline-none focus:border-pms-500"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg text-xs p-2 text-white outline-none focus:border-pms-500"
                     value={currentUser.id}
                     onChange={(e) => {
                         const u = users.find(user => user.id === e.target.value);
@@ -770,7 +1111,7 @@ const App: React.FC = () => {
                     }}
                 >
                     {users.map(u => (
-                        <option key={u.id} value={u.id}>{u.name}</option>
+                        <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                     ))}
                 </select>
             </div>
@@ -800,35 +1141,27 @@ const App: React.FC = () => {
         {selectedWorkId ? renderWorkBoard() : (
             <div className="h-full overflow-y-auto">
                 {activeTab === 'DASHBOARD' && renderDashboard()}
-                {activeTab === 'WORKS' && renderDashboard()} {/* Fallback/Duplicate view for list */}
+                {activeTab === 'WORKS' && renderDashboard()} 
+                {activeTab === 'HISTORY' && renderHistoryView()}
+                {activeTab === 'REGISTRATIONS' && hasPermission('manageUsers') && renderRegistrationHub()}
                 {activeTab === 'FINANCE' && hasPermission('viewFinance') && (
                     <div className="p-6">
                         <FinanceView 
                             records={finance} 
                             currentUser={currentUser}
+                            users={users} // Pass users
                             onAddRecord={handleAddFinanceRecord}
                             onUpdateRecord={handleUpdateFinanceRecord}
                             onDeleteRecord={handleDeleteFinanceRecord}
                         />
                     </div>
                 )}
-                {activeTab === 'USERS' && hasPermission('manageUsers') && (
-                    <UserManagement 
-                        users={users} 
-                        profiles={profiles}
-                        onAddUser={handleAddUser}
-                        onUpdateUser={handleUpdateUser}
-                        onDeleteUser={handleDeleteUser}
-                        onAddProfile={handleAddProfile}
-                        onUpdateProfile={handleUpdateProfile}
-                        onDeleteProfile={handleDeleteProfile}
-                    />
-                )}
                 {activeTab === 'ALL_TASKS' && hasPermission('viewGlobalTasks') && (
                     <GlobalTaskList 
                         tasks={tasks}
-                        works={works}
+                        works={visibleWorks} 
                         users={users}
+                        taskStatuses={taskStatuses}
                         onUpdateTask={handleUpdateTask}
                         onAddTask={handleAddTask}
                     />
@@ -839,9 +1172,14 @@ const App: React.FC = () => {
                         works={works}
                         tasks={tasks}
                         users={users}
+                        materials={materials} // Pass Materials
                         currentUser={currentUser}
                         onAddOrder={handleAddOrder}
                         onUpdateOrder={handleUpdateOrder}
+                        onOpenMaterialCatalog={() => { // Shortcut Handler
+                            setActiveTab('REGISTRATIONS');
+                            setRegistrationSubTab('MATERIALS');
+                        }}
                     />
                 )}
             </div>
@@ -881,12 +1219,24 @@ const App: React.FC = () => {
                           </div>
                           <div>
                               <label className="block text-sm font-bold text-slate-700 mb-1">Cliente</label>
-                              <input 
-                                  type="text" 
-                                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                                  value={editingWork.client}
-                                  onChange={(e) => setEditingWork({...editingWork, client: e.target.value})}
-                              />
+                              <select
+                                  className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                                  value={editingWork.clientId || ''}
+                                  onChange={(e) => {
+                                      const selectedClient = users.find(u => u.id === e.target.value);
+                                      setEditingWork({
+                                          ...editingWork, 
+                                          clientId: e.target.value,
+                                          client: selectedClient ? selectedClient.name : ''
+                                      })
+                                  }}
+                              >
+                                  <option value="">Selecione um cliente...</option>
+                                  {users.filter(u => u.category === 'CLIENT').map(u => (
+                                      <option key={u.id} value={u.id}>{u.name}</option>
+                                  ))}
+                              </select>
+                              <p className="text-[10px] text-slate-500 mt-1">Cadastre novos clientes no menu "Cadastros".</p>
                           </div>
                           <div>
                               <label className="block text-sm font-bold text-slate-700 mb-1">Orçamento (R$)</label>
@@ -977,7 +1327,7 @@ const App: React.FC = () => {
                       <div>
                           <label className="block text-sm font-bold text-slate-700 mb-2">Equipe Vinculada</label>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                              {users.map(u => (
+                              {users.filter(u => u.category === 'EMPLOYEE').map(u => (
                                   <div 
                                       key={u.id} 
                                       onClick={() => toggleTeamMember(u.id)}
