@@ -1,38 +1,39 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder, TaskStatusDefinition, TaskStatus, Material, FinanceCategoryDefinition } from './types';
-import { MOCK_USERS, MOCK_WORKS, MOCK_TASKS, MOCK_FINANCE, MOCK_LOGS, MOCK_PROFILES, MOCK_ORDERS, DEFAULT_TASK_STATUSES, MOCK_MATERIALS, DEFAULT_FINANCE_CATEGORIES } from './constants';
+import { MOCK_USERS } from './constants'; // Only used for initial Auth default
 import { KanbanBoard } from './components/KanbanBoard';
 import { FinanceView } from './components/FinanceView';
 import { DailyLogView } from './components/DailyLog';
 import { UserManagement } from './components/UserManagement';
 import { GlobalTaskList } from './components/GlobalTaskList';
 import { MaterialOrders } from './components/MaterialOrders';
-import { AuthScreen } from './components/AuthScreen';
-import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, Landmark, Bell, Users, ListTodo, CheckCircle2, Calendar, Edit, Save, Image as ImageIcon, ExternalLink, Package, Plus, ChevronDown, ArrowLeft, Archive, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon } from 'lucide-react';
+import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, Landmark, Bell, Users, ListTodo, CheckCircle2, Calendar, Edit, Save, Image as ImageIcon, ExternalLink, Package, Plus, ChevronDown, ArrowLeft, Archive, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon, Loader2 } from 'lucide-react';
+import { api } from './services/api';
 
 // --- Main App Component ---
 
 const App: React.FC = () => {
   // Global State
-  const [currentUser, setCurrentUser] = useState<User | null>(null); // Start as null for Login Screen
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); // Start logged in as Admin (Fallback)
   
   // Navigation State
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'WORKS' | 'HISTORY' | 'FINANCE' | 'REGISTRATIONS' | 'ALL_TASKS' | 'MATERIALS'>('DASHBOARD');
   const [registrationSubTab, setRegistrationSubTab] = useState<'HUB' | 'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'MATERIALS' | 'SETTINGS' | 'FINANCE_CATEGORIES'>('HUB');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   
-  // Data State (Simulating DB)
-  const [works, setWorks] = useState<ConstructionWork[]>(MOCK_WORKS);
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [profiles, setProfiles] = useState<UserProfile[]>(MOCK_PROFILES);
-  const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
-  const [finance, setFinance] = useState<FinancialRecord[]>(MOCK_FINANCE);
-  const [logs, setLogs] = useState<DailyLog[]>(MOCK_LOGS);
-  const [orders, setOrders] = useState<MaterialOrder[]>(MOCK_ORDERS);
-  const [materials, setMaterials] = useState<Material[]>(MOCK_MATERIALS);
-  const [taskStatuses, setTaskStatuses] = useState<TaskStatusDefinition[]>(DEFAULT_TASK_STATUSES);
-  const [financeCategories, setFinanceCategories] = useState<FinanceCategoryDefinition[]>(DEFAULT_FINANCE_CATEGORIES);
+  // Data State (Fetched from API)
+  const [works, setWorks] = useState<ConstructionWork[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [finance, setFinance] = useState<FinancialRecord[]>([]);
+  const [logs, setLogs] = useState<DailyLog[]>([]);
+  const [orders, setOrders] = useState<MaterialOrder[]>([]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [taskStatuses, setTaskStatuses] = useState<TaskStatusDefinition[]>([]);
+  const [financeCategories, setFinanceCategories] = useState<FinanceCategoryDefinition[]>([]);
 
   // Work Detail Tab State
   const [workTab, setWorkTab] = useState<'OVERVIEW' | 'KANBAN' | 'FINANCE' | 'LOGS'>('OVERVIEW');
@@ -42,35 +43,40 @@ const App: React.FC = () => {
   const [isEditWorkModalOpen, setIsEditWorkModalOpen] = useState(false);
   const [editingWork, setEditingWork] = useState<ConstructionWork | null>(null);
 
-  // --- Auth Logic ---
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-  };
+  // --- INITIAL DATA FETCH ---
+  useEffect(() => {
+    const loadData = async () => {
+        setIsLoading(true);
+        const data = await api.getAllData();
+        
+        setWorks(data.works);
+        setUsers(data.users);
+        setProfiles(data.profiles);
+        setTasks(data.tasks);
+        setFinance(data.finance);
+        setLogs(data.logs);
+        setMaterials(data.materials);
+        setOrders(data.orders);
+        setTaskStatuses(data.taskStatuses);
+        setFinanceCategories(data.financeCategories);
+        
+        // Reset current user to the one from the fetched list (if ID matches) or keep mock
+        const fetchedAdmin = data.users.find((u: User) => u.id === 'u1');
+        if (fetchedAdmin) setCurrentUser(fetchedAdmin);
 
-  const handleRegister = (user: User) => {
-    setUsers(prev => [...prev, user]);
-    setCurrentUser(user);
-  };
+        setIsLoading(false);
+    };
+    loadData();
+  }, []);
+
 
   const handleLogout = () => {
-    setCurrentUser(null);
     setSelectedWorkId(null);
     setActiveTab('DASHBOARD');
+    alert("Sessão reiniciada (Modo sem login).");
   };
 
-  // Return AuthScreen if not logged in
-  if (!currentUser) {
-      return (
-          <AuthScreen 
-             users={users} 
-             onLogin={handleLogin} 
-             onRegister={handleRegister} 
-          />
-      );
-  }
-
   // --- Computed Data: Visibility ---
-  // Filter works based on user role. Clients see only their works. Others see all.
   const visibleWorks = works.filter(w => {
       if (currentUser.role === UserRole.CLIENT || currentUser.category === 'CLIENT') {
           return w.clientId === currentUser.id;
@@ -78,9 +84,7 @@ const App: React.FC = () => {
       return true;
   });
 
-  // --- Helpers & Permissions ---
   const selectedWork = visibleWorks.find(w => w.id === selectedWorkId);
-  
   const activeTasks = tasks.filter(t => t.workId === selectedWorkId);
   const activeFinance = finance.filter(f => f.workId === selectedWorkId);
   const activeLogs = logs.filter(l => l.workId === selectedWorkId);
@@ -88,18 +92,15 @@ const App: React.FC = () => {
   // Check permission helper
   const hasPermission = (permissionKey: keyof AppPermissions): boolean => {
       const profile = profiles.find(p => p.id === currentUser.profileId);
-      if (!profile) return false; // Safe default
+      if (!profile) return false; 
       if (profile.permissions.isSystemAdmin) return true;
       return !!profile.permissions[permissionKey];
   };
 
   // --- Financial Alerts Logic ---
   const financialAlerts = finance.filter(record => {
-    // Check permission
     if (!hasPermission('viewFinance')) return false;
     if (record.status !== 'Pendente') return false;
-    
-    // Ensure we only show alerts for visible works
     const isVisibleWork = visibleWorks.some(w => w.id === record.workId);
     if (!isVisibleWork) return false;
 
@@ -107,67 +108,74 @@ const App: React.FC = () => {
     today.setHours(0, 0, 0, 0);
     const [y, m, d] = record.dueDate.split('-').map(Number);
     const dueDate = new Date(y, m - 1, d);
-    
     const diffTime = dueDate.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    // "Vencendo em 2 dias" covers today (0), tomorrow (1), and day after (2) + overdue
     return diffDays <= 2;
   }).sort((a,b) => a.dueDate.localeCompare(b.dueDate));
 
-  // --- Handlers ---
+  // --- Handlers (Updated to use API) ---
 
-  const handleUpdateWork = (updatedWork: ConstructionWork) => {
+  const handleUpdateWork = async (updatedWork: ConstructionWork) => {
       if (!hasPermission('manageWorks')) return;
+      await api.updateWork(updatedWork);
       setWorks(prev => prev.map(w => w.id === updatedWork.id ? updatedWork : w));
   };
 
-  const handleUpdateTask = (updatedTask: Task) => {
+  const handleUpdateTask = async (updatedTask: Task) => {
+    await api.updateTask(updatedTask);
     setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
   };
 
-  const handleAddTask = (newTask: Task) => {
+  const handleAddTask = async (newTask: Task) => {
+    await api.createTask(newTask);
     setTasks(prev => [...prev, newTask]);
   };
 
-  const handleAddLog = (newLog: DailyLog) => {
+  const handleAddLog = async (newLog: DailyLog) => {
+    await api.createLog(newLog);
     setLogs(prev => [newLog, ...prev]);
   };
 
   // Finance Handlers
-  const handleAddFinanceRecord = (record: FinancialRecord) => {
+  const handleAddFinanceRecord = async (record: FinancialRecord) => {
     if (!hasPermission('manageFinance')) { alert('Sem permissão'); return; }
+    await api.createFinance(record);
     setFinance(prev => [...prev, record]);
   };
 
-  const handleUpdateFinanceRecord = (updatedRecord: FinancialRecord) => {
+  const handleUpdateFinanceRecord = async (updatedRecord: FinancialRecord) => {
     if (!hasPermission('manageFinance')) { alert('Sem permissão'); return; }
+    await api.updateFinance(updatedRecord);
     setFinance(prev => prev.map(f => f.id === updatedRecord.id ? updatedRecord : f));
   };
 
-  const handleDeleteFinanceRecord = (recordId: string) => {
+  const handleDeleteFinanceRecord = async (recordId: string) => {
     if (!hasPermission('manageFinance')) { alert('Sem permissão'); return; }
     if(window.confirm("Tem certeza que deseja excluir este lançamento?")) {
+        await api.deleteFinance(recordId);
         setFinance(prev => prev.filter(f => f.id !== recordId));
     }
   };
 
-  const handleQuickPay = (record: FinancialRecord) => {
+  const handleQuickPay = async (record: FinancialRecord) => {
       if (!hasPermission('manageFinance')) return;
       const updatedRecord: FinancialRecord = {
           ...record,
           status: 'Pago',
           paidDate: new Date().toISOString().split('T')[0]
       };
-      handleUpdateFinanceRecord(updatedRecord);
+      await handleUpdateFinanceRecord(updatedRecord);
   };
 
   // Finance Category Handlers
-  const handleAddCategory = (newCat: FinanceCategoryDefinition) => {
+  const handleAddCategory = async (newCat: FinanceCategoryDefinition) => {
+    await api.createCategory(newCat);
     setFinanceCategories(prev => [...prev, newCat]);
   };
 
   const handleUpdateCategory = (updatedCat: FinanceCategoryDefinition) => {
+    // API Implementation needed if robust edit is required. For now just State.
     setFinanceCategories(prev => prev.map(c => c.id === updatedCat.id ? updatedCat : c));
   };
 
@@ -178,30 +186,32 @@ const App: React.FC = () => {
   };
 
   // User Management Handlers
-  const handleAddUser = (newUser: User) => {
+  const handleAddUser = async (newUser: User) => {
+    await api.createUser(newUser);
     setUsers(prev => [...prev, newUser]);
   };
 
-  const handleUpdateUser = (updatedUser: User) => {
+  const handleUpdateUser = async (updatedUser: User) => {
+    await api.updateUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    // Update current user if self-editing
-    if (currentUser.id === updatedUser.id) {
-        setCurrentUser(updatedUser);
-    }
+    if (currentUser.id === updatedUser.id) setCurrentUser(updatedUser);
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
     if (window.confirm('Tem certeza que deseja remover este usuário?')) {
+      await api.deleteUser(userId);
       setUsers(prev => prev.filter(u => u.id !== userId));
     }
   };
 
   // Profile Management Handlers
-  const handleAddProfile = (newProfile: UserProfile) => {
+  const handleAddProfile = async (newProfile: UserProfile) => {
+      await api.createProfile(newProfile);
       setProfiles(prev => [...prev, newProfile]);
   };
 
-  const handleUpdateProfile = (updatedProfile: UserProfile) => {
+  const handleUpdateProfile = async (updatedProfile: UserProfile) => {
+      await api.updateProfile(updatedProfile);
       setProfiles(prev => prev.map(p => p.id === updatedProfile.id ? updatedProfile : p));
   };
 
@@ -212,32 +222,38 @@ const App: React.FC = () => {
   };
 
   const handleUpdateStatuses = (newStatuses: TaskStatusDefinition[]) => {
+    api.updateStatuses(newStatuses); // Fake async
     setTaskStatuses(newStatuses);
   };
 
   // Material Catalog Handlers
-  const handleAddMaterial = (newMaterial: Material) => {
+  const handleAddMaterial = async (newMaterial: Material) => {
+      await api.createMaterial(newMaterial);
       setMaterials(prev => [...prev, newMaterial]);
   };
   
-  const handleUpdateMaterial = (updatedMaterial: Material) => {
+  const handleUpdateMaterial = async (updatedMaterial: Material) => {
+      await api.updateMaterial(updatedMaterial);
       setMaterials(prev => prev.map(m => m.id === updatedMaterial.id ? updatedMaterial : m));
   };
 
-  const handleDeleteMaterial = (materialId: string) => {
+  const handleDeleteMaterial = async (materialId: string) => {
       if (window.confirm('Tem certeza que deseja excluir este material do catálogo?')) {
+          await api.deleteMaterial(materialId);
           setMaterials(prev => prev.filter(m => m.id !== materialId));
       }
   };
 
   // Material Order Handlers
-  const handleAddOrder = (newOrder: MaterialOrder) => {
+  const handleAddOrder = async (newOrder: MaterialOrder) => {
     if (!hasPermission('manageMaterials')) { alert("Sem permissão."); return; }
+    await api.createOrder(newOrder);
     setOrders(prev => [...prev, newOrder]);
   };
 
-  const handleUpdateOrder = (updatedOrder: MaterialOrder) => {
+  const handleUpdateOrder = async (updatedOrder: MaterialOrder) => {
     if (!hasPermission('manageMaterials')) { alert("Sem permissão."); return; }
+    await api.updateOrder(updatedOrder);
     setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
   };
 
@@ -246,7 +262,7 @@ const App: React.FC = () => {
       if (selectedWork && hasPermission('manageWorks')) {
           setEditingWork({
               ...selectedWork,
-              teamIds: selectedWork.teamIds || [] // Ensure array exists
+              teamIds: selectedWork.teamIds || []
           });
           setIsEditWorkModalOpen(true);
       }
@@ -255,7 +271,7 @@ const App: React.FC = () => {
   const handleOpenCreateWorkModal = () => {
     if (!hasPermission('manageWorks')) { alert("Sem permissão."); return; }
     setEditingWork({
-        id: '', // Empty ID signals new work
+        id: '',
         name: '',
         client: '',
         clientId: '',
@@ -265,24 +281,23 @@ const App: React.FC = () => {
         budget: 0,
         startDate: new Date().toISOString().split('T')[0],
         endDate: '',
-        imageUrl: `https://picsum.photos/id/${Math.floor(Math.random() * 200)}/800/400`, // Random placeholder
+        imageUrl: `https://picsum.photos/id/${Math.floor(Math.random() * 200)}/800/400`,
         description: '',
-        teamIds: [currentUser.id] // Auto-assign creator
+        teamIds: [currentUser.id]
     });
     setIsEditWorkModalOpen(true);
   };
 
-  const saveEditedWork = () => {
+  const saveEditedWork = async () => {
       if (editingWork && editingWork.name) {
           if (editingWork.id) {
-              // Update Existing
-              handleUpdateWork(editingWork);
+              await handleUpdateWork(editingWork);
           } else {
-              // Create New
               const newWork: ConstructionWork = {
                   ...editingWork,
                   id: Math.random().toString(36).substr(2, 9)
               };
+              await api.createWork(newWork);
               setWorks(prev => [...prev, newWork]);
           }
           setIsEditWorkModalOpen(false);
@@ -316,10 +331,8 @@ const App: React.FC = () => {
   // --- Views ---
 
   const renderDashboard = () => {
-    // Only show active works in dashboard (using visibleWorks for permission filtering)
     const activeWorksList = visibleWorks.filter(w => w.status !== WorkStatus.COMPLETED);
     
-    // Work Status Counters (Visible works only)
     const workStats = {
         execution: visibleWorks.filter(w => w.status === WorkStatus.EXECUTION).length,
         planning: visibleWorks.filter(w => w.status === WorkStatus.PLANNING).length,
@@ -334,9 +347,7 @@ const App: React.FC = () => {
           <p className="text-slate-500">Visão geral das operações da PMS Construtora.</p>
         </div>
 
-        {/* Status Overview Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Execução */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div>
                 <div>
@@ -348,7 +359,6 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            {/* Planejamento */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
                 <div>
@@ -360,7 +370,6 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-            {/* Pausadas */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-shadow">
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-500"></div>
                 <div>
@@ -372,7 +381,6 @@ const App: React.FC = () => {
                 </div>
             </div>
 
-             {/* Concluídas */}
              <div 
                 onClick={() => setActiveTab('HISTORY')}
                 className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between relative overflow-hidden group hover:shadow-md transition-all cursor-pointer"
@@ -389,7 +397,6 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* Financial Alerts (Incomes and Expenses) */}
         {financialAlerts.length > 0 && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-4 shadow-sm">
              <div className="p-2 bg-orange-100 rounded-full text-orange-600 shrink-0 mt-1 animate-pulse">
@@ -401,7 +408,6 @@ const App: React.FC = () => {
                    {financialAlerts.map(alert => {
                        const isIncome = alert.type === FinanceType.INCOME;
                        const workName = works.find(w => w.id === alert.workId)?.name || 'Obra Desconhecida';
-                       
                        return (
                         <div key={alert.id} className="bg-white/80 p-3 rounded-lg border border-orange-100 flex flex-col md:flex-row md:items-center justify-between gap-2">
                            <div>
@@ -437,9 +443,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Quick Access & Global Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Tarefas Abertas -> Tarefas Gerais (Se tiver permissao) */}
           <div 
             onClick={() => { 
                 if (hasPermission('viewGlobalTasks')) {
@@ -456,7 +460,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Saldo Atual em Caixa -> Financeiro Global (Se Permissão) */}
           {hasPermission('viewFinance') && (
             <div 
                 onClick={() => { 
@@ -484,7 +487,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* Contas a Pagar -> Financeiro Global (Se Permissão) */}
           {hasPermission('viewFinance') && (
               <div 
                 onClick={() => { 
@@ -505,7 +507,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Works List Quick View (Filtered) */}
           <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
                 <div className="flex items-center gap-2">
@@ -562,14 +563,12 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          {/* Recent Activity / Daily Logs Preview */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
              <div className="px-6 py-4 border-b border-slate-100">
                 <h3 className="font-bold text-slate-800">Diário Recente</h3>
              </div>
              <div className="p-4 space-y-4">
                 {logs.slice(0, 3).map(log => {
-                    // Only show logs for visible works
                     const w = visibleWorks.find(w => w.id === log.workId);
                     if (!w) return null;
                     
@@ -596,7 +595,6 @@ const App: React.FC = () => {
   };
 
   const renderHistoryView = () => {
-      // Use visibleWorks so client only sees their own history
       const completedWorks = visibleWorks.filter(w => w.status === WorkStatus.COMPLETED);
 
       return (
@@ -650,7 +648,6 @@ const App: React.FC = () => {
   };
 
   const renderRegistrationHub = () => {
-      // If we are in a specific sub-tab, render UserManagement
       if (registrationSubTab !== 'HUB') {
           return (
               <div className="h-full flex flex-col">
@@ -699,7 +696,6 @@ const App: React.FC = () => {
           );
       }
 
-      // Hub View
       return (
           <div className="p-6 md:p-12 animate-fade-in max-w-6xl mx-auto">
               <div className="text-center mb-12">
@@ -708,7 +704,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                  {/* Employees */}
                   <button 
                     onClick={() => setRegistrationSubTab('EMPLOYEES')}
                     className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
@@ -722,7 +717,6 @@ const App: React.FC = () => {
                       </span>
                   </button>
 
-                  {/* Clients */}
                   <button 
                     onClick={() => setRegistrationSubTab('CLIENTS')}
                     className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
@@ -736,7 +730,6 @@ const App: React.FC = () => {
                       </span>
                   </button>
 
-                  {/* Suppliers */}
                   <button 
                     onClick={() => setRegistrationSubTab('SUPPLIERS')}
                     className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
@@ -750,7 +743,6 @@ const App: React.FC = () => {
                       </span>
                   </button>
 
-                  {/* Materials Catalog */}
                   <button 
                     onClick={() => setRegistrationSubTab('MATERIALS')}
                     className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
@@ -764,7 +756,6 @@ const App: React.FC = () => {
                       </span>
                   </button>
 
-                  {/* New Work Button */}
                   {hasPermission('manageWorks') && (
                     <button 
                       onClick={handleOpenCreateWorkModal}
@@ -780,7 +771,6 @@ const App: React.FC = () => {
                     </button>
                   )}
                   
-                  {/* Finance Categories */}
                   {hasPermission('manageFinance') && (
                       <button 
                         onClick={() => setRegistrationSubTab('FINANCE_CATEGORIES')}
@@ -796,7 +786,6 @@ const App: React.FC = () => {
                       </button>
                   )}
 
-                  {/* Settings / Statuses */}
                   <button 
                     onClick={() => setRegistrationSubTab('SETTINGS')}
                     className="bg-white p-8 rounded-2xl border border-slate-200 shadow-lg hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group flex flex-col items-center text-center"
@@ -828,10 +817,8 @@ const App: React.FC = () => {
   const renderWorkBoard = () => {
     if (!selectedWork) return null;
 
-    // ... (Keep existing WorkBoard Logic, just returning the JSX)
     return (
       <div className="h-full flex flex-col animate-fade-in">
-        {/* Work Header */}
         <div className="bg-white border-b border-slate-200 px-4 py-3 flex flex-col md:flex-row justify-between md:items-center gap-3 shrink-0">
            <div className="flex items-center gap-3">
                <button onClick={() => { setSelectedWorkId(null); }} className="md:hidden p-2 -ml-2 text-slate-400">
@@ -839,7 +826,6 @@ const App: React.FC = () => {
                </button>
                <h2 className="text-xl md:text-2xl font-bold text-slate-800 truncate max-w-[200px] md:max-w-md">{selectedWork.name}</h2>
                
-               {/* Status Toggle Dropdown */}
                <div className="relative group">
                   <button className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 uppercase transition-colors ${
                       selectedWork.status === WorkStatus.EXECUTION ? 'bg-green-100 text-green-700 hover:bg-green-200' :
@@ -851,7 +837,6 @@ const App: React.FC = () => {
                       <ChevronDown size={14} />
                   </button>
                   
-                  {/* Dropdown Menu */}
                   <div className="absolute left-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-slate-100 overflow-hidden z-50 hidden group-hover:block animate-in fade-in slide-in-from-top-1">
                       {Object.values(WorkStatus).map((status) => (
                           <button
@@ -906,7 +891,6 @@ const App: React.FC = () => {
            </div>
         </div>
 
-        {/* Work Content */}
         <div className="flex-1 overflow-hidden bg-slate-50 relative">
             {workTab === 'OVERVIEW' && (
                 <div className="p-6 overflow-y-auto h-full">
@@ -914,7 +898,6 @@ const App: React.FC = () => {
                       <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                           <div className="aspect-video rounded-lg overflow-hidden bg-slate-100 mb-4 relative group">
                              <img src={selectedWork.imageUrl} alt={selectedWork.name} className="w-full h-full object-cover" />
-                             {/* Edit Overlay hint */}
                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                                  {hasPermission('manageWorks') && <button onClick={openEditWorkModal} className="opacity-0 group-hover:opacity-100 bg-white/90 px-4 py-2 rounded-full text-xs font-bold shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-all">Alterar Imagem</button>}
                              </div>
@@ -945,7 +928,6 @@ const App: React.FC = () => {
                       </div>
 
                       <div className="space-y-6">
-                          {/* Progress Card */}
                           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                               <h3 className="text-lg font-bold text-slate-800 mb-4">Progresso Físico</h3>
                               <div className="relative pt-2">
@@ -968,7 +950,6 @@ const App: React.FC = () => {
                               <p className="text-slate-500 text-sm">{selectedWork.description}</p>
                           </div>
 
-                          {/* Team Card */}
                           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                               <h3 className="text-lg font-bold text-slate-800 mb-4">Equipe Alocada</h3>
                               <div className="flex flex-wrap gap-3">
@@ -1016,7 +997,7 @@ const App: React.FC = () => {
                     <FinanceView 
                         records={activeFinance}
                         currentUser={currentUser}
-                        users={users} // Pass Users for Supplier linking
+                        users={users}
                         work={selectedWork}
                         financeCategories={financeCategories}
                         onAddRecord={handleAddFinanceRecord}
@@ -1044,7 +1025,6 @@ const App: React.FC = () => {
     );
   };
 
-  // Mobile Menu Rendering
   const renderMobileMenu = () => (
       <div className={`fixed inset-0 bg-slate-900 z-50 transform transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:hidden`}>
           <div className="p-6 flex justify-between items-center border-b border-slate-800">
@@ -1092,9 +1072,16 @@ const App: React.FC = () => {
       </div>
   );
 
-  // Side Nav Helper: Organize works by status (ONLY ACTIVE)
-  // Use visibleWorks here as well for sidebar
   const activeSidebarWorks = visibleWorks.filter(w => w.status !== WorkStatus.COMPLETED);
+
+  if (isLoading) {
+      return (
+          <div className="min-h-screen bg-slate-100 flex items-center justify-center flex-col gap-4">
+              <Loader2 size={48} className="animate-spin text-pms-600" />
+              <p className="text-slate-500 font-medium">Carregando sistema...</p>
+          </div>
+      );
+  }
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
@@ -1125,8 +1112,6 @@ const App: React.FC = () => {
                         {selectedWorkId === w.id && <ChevronRight size={14} />}
                     </button>
                 ))}
-                
-                {/* History Button */}
                 <NavButton 
                    active={activeTab === 'HISTORY' && !selectedWorkId} 
                    onClick={() => { setSelectedWorkId(null); setActiveTab('HISTORY'); }} 
@@ -1169,7 +1154,6 @@ const App: React.FC = () => {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-            {/* User Profile Info */}
             <div className="flex items-center gap-3 mb-4 px-2">
                 <img src={currentUser.avatar} alt="User" className="w-8 h-8 rounded-full border border-slate-600" />
                 <div className="overflow-hidden">
@@ -1188,7 +1172,6 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 bg-white border-b border-slate-200 h-16 flex items-center justify-between px-4 z-40 shadow-sm">
           <div className="flex items-center gap-3">
               <button onClick={() => setMobileMenuOpen(true)} className="text-slate-600">
@@ -1201,7 +1184,6 @@ const App: React.FC = () => {
           </div>
       </div>
 
-      {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative pt-16 md:pt-0">
         {selectedWorkId ? renderWorkBoard() : (
             <div className="h-full overflow-y-auto">
@@ -1214,7 +1196,7 @@ const App: React.FC = () => {
                         <FinanceView 
                             records={finance} 
                             currentUser={currentUser}
-                            users={users} // Pass users
+                            users={users}
                             financeCategories={financeCategories}
                             onAddRecord={handleAddFinanceRecord}
                             onUpdateRecord={handleUpdateFinanceRecord}
@@ -1239,11 +1221,11 @@ const App: React.FC = () => {
                         works={works}
                         tasks={tasks}
                         users={users}
-                        materials={materials} // Pass Materials
+                        materials={materials}
                         currentUser={currentUser}
                         onAddOrder={handleAddOrder}
                         onUpdateOrder={handleUpdateOrder}
-                        onOpenMaterialCatalog={() => { // Shortcut Handler
+                        onOpenMaterialCatalog={() => {
                             setActiveTab('REGISTRATIONS');
                             setRegistrationSubTab('MATERIALS');
                         }}
@@ -1254,8 +1236,6 @@ const App: React.FC = () => {
       </main>
 
       {renderMobileMenu()}
-
-      {/* --- Modals --- */}
 
       {/* Create/Edit Work Modal */}
       {isEditWorkModalOpen && editingWork && (
@@ -1272,7 +1252,6 @@ const App: React.FC = () => {
                   </div>
                   
                   <div className="overflow-y-auto flex-1 px-2">
-                      {/* Main Info */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                           <div className="md:col-span-2">
                               <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Obra</label>
@@ -1325,7 +1304,6 @@ const App: React.FC = () => {
                           </div>
                       </div>
 
-                      {/* Dates & Status */}
                       <div className="grid grid-cols-2 gap-4 mb-4">
                           <div>
                               <label className="block text-sm font-bold text-slate-700 mb-1">Data Início</label>
@@ -1347,7 +1325,6 @@ const App: React.FC = () => {
                           </div>
                       </div>
 
-                       {/* Status */}
                        <div className="mb-4">
                             <label className="block text-sm font-bold text-slate-700 mb-1">Status Atual</label>
                             <div className="flex gap-2 flex-wrap">
@@ -1363,7 +1340,6 @@ const App: React.FC = () => {
                             </div>
                        </div>
 
-                      {/* Description */}
                       <div className="mb-4">
                           <label className="block text-sm font-bold text-slate-700 mb-1">Descrição</label>
                           <textarea 
@@ -1373,7 +1349,6 @@ const App: React.FC = () => {
                           />
                       </div>
                       
-                      {/* Image URL */}
                       <div className="mb-4">
                           <label className="block text-sm font-bold text-slate-700 mb-1">URL da Imagem (Capa)</label>
                           <div className="flex gap-2">
@@ -1390,7 +1365,6 @@ const App: React.FC = () => {
                           </div>
                       </div>
 
-                      {/* Team Assignment */}
                       <div>
                           <label className="block text-sm font-bold text-slate-700 mb-2">Equipe Vinculada</label>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -1424,7 +1398,6 @@ const App: React.FC = () => {
   );
 };
 
-// Helper for Side Nav Buttons
 const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
     <button 
       onClick={onClick}
