@@ -1,4 +1,3 @@
-
 import { 
     User, ConstructionWork, Task, FinancialRecord, DailyLog, MaterialOrder, Material, 
     UserProfile, TaskStatusDefinition, FinanceCategoryDefinition 
@@ -9,7 +8,8 @@ import {
 } from '../constants';
 
 // Automatically detects if running locally or in production (Vite env vars)
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// We use type assertion to avoid TS errors if types are missing
+const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api';
 
 // Helper to try fetching from backend, fallback to mock if fails
 async function fetchWithFallback<T>(endpoint: string, mockData: T): Promise<T> {

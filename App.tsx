@@ -1,22 +1,36 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder, TaskStatusDefinition, TaskStatus, Material, FinanceCategoryDefinition } from './types';
-import { MOCK_USERS } from './constants'; // Only used for initial Auth default
-import { KanbanBoard } from './components/KanbanBoard';
-import { FinanceView } from './components/FinanceView';
-import { DailyLogView } from './components/DailyLog';
-import { UserManagement } from './components/UserManagement';
-import { GlobalTaskList } from './components/GlobalTaskList';
-import { MaterialOrders } from './components/MaterialOrders';
-import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, Landmark, Bell, Users, ListTodo, CheckCircle2, Calendar, Edit, Save, Image as ImageIcon, ExternalLink, Package, Plus, ChevronDown, ArrowLeft, Archive, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder, TaskStatusDefinition, Material, FinanceCategoryDefinition } from './types';
+import { MOCK_USERS } from './constants'; 
+import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, ChevronDown, Landmark, Bell, Users, ListTodo, CheckCircle2, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon, Loader2, Edit, Plus, Package, ExternalLink, ArrowLeft, Archive } from 'lucide-react';
 import { api } from './services/api';
+import { AuthScreen } from './components/AuthScreen';
+
+// --- LAZY LOADING COMPONENTS FOR PERFORMANCE ---
+// These are only loaded when the user actually clicks the tab, saving initial bandwidth.
+const KanbanBoard = React.lazy(() => import('./components/KanbanBoard').then(module => ({ default: module.KanbanBoard })));
+const FinanceView = React.lazy(() => import('./components/FinanceView').then(module => ({ default: module.FinanceView })));
+const DailyLogView = React.lazy(() => import('./components/DailyLog').then(module => ({ default: module.DailyLogView })));
+const UserManagement = React.lazy(() => import('./components/UserManagement').then(module => ({ default: module.UserManagement })));
+const GlobalTaskList = React.lazy(() => import('./components/GlobalTaskList').then(module => ({ default: module.GlobalTaskList })));
+const MaterialOrders = React.lazy(() => import('./components/MaterialOrders').then(module => ({ default: module.MaterialOrders })));
+
+// Loading Fallback Component
+const LoadingSpinner = () => (
+    <div className="flex h-full items-center justify-center p-10">
+        <Loader2 className="animate-spin text-pms-600" size={32} />
+        <span className="ml-2 text-slate-500 font-medium">Carregando módulo...</span>
+    </div>
+);
 
 // --- Main App Component ---
 
 const App: React.FC = () => {
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
   // Global State
   const [isLoading, setIsLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); // Start logged in as Admin (Fallback)
+  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); 
   
   // Navigation State
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'WORKS' | 'HISTORY' | 'FINANCE' | 'REGISTRATIONS' | 'ALL_TASKS' | 'MATERIALS'>('DASHBOARD');
@@ -60,20 +74,37 @@ const App: React.FC = () => {
         setTaskStatuses(data.taskStatuses);
         setFinanceCategories(data.financeCategories);
         
-        // Reset current user to the one from the fetched list (if ID matches) or keep mock
-        const fetchedAdmin = data.users.find((u: User) => u.id === 'u1');
-        if (fetchedAdmin) setCurrentUser(fetchedAdmin);
-
         setIsLoading(false);
     };
-    loadData();
-  }, []);
+    if (isAuthenticated) {
+        loadData();
+    } else {
+        // Load minimal data for auth screen (users check)
+        api.getAllData().then(data => {
+             setUsers(data.users);
+             setProfiles(data.profiles);
+             setIsLoading(false);
+        });
+    }
+  }, [isAuthenticated]);
 
+
+  const handleLogin = (user: User) => {
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+  };
+
+  const handleRegister = async (user: User) => {
+      await api.createUser(user);
+      setCurrentUser(user);
+      setUsers(prev => [...prev, user]);
+      setIsAuthenticated(true);
+  };
 
   const handleLogout = () => {
     setSelectedWorkId(null);
     setActiveTab('DASHBOARD');
-    alert("Sessão reiniciada (Modo sem login).");
+    setIsAuthenticated(false);
   };
 
   // --- Computed Data: Visibility ---
@@ -175,7 +206,6 @@ const App: React.FC = () => {
   };
 
   const handleUpdateCategory = (updatedCat: FinanceCategoryDefinition) => {
-    // API Implementation needed if robust edit is required. For now just State.
     setFinanceCategories(prev => prev.map(c => c.id === updatedCat.id ? updatedCat : c));
   };
 
@@ -222,7 +252,7 @@ const App: React.FC = () => {
   };
 
   const handleUpdateStatuses = (newStatuses: TaskStatusDefinition[]) => {
-    api.updateStatuses(newStatuses); // Fake async
+    api.updateStatuses(newStatuses); 
     setTaskStatuses(newStatuses);
   };
 
@@ -647,9 +677,9 @@ const App: React.FC = () => {
       );
   };
 
-  const renderRegistrationHub = () => {
-      if (registrationSubTab !== 'HUB') {
-          return (
+  const renderRegistrationHub = () => (
+     <Suspense fallback={<LoadingSpinner />}>
+         {registrationSubTab !== 'HUB' ? (
               <div className="h-full flex flex-col">
                   <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4">
                       <button 
@@ -693,11 +723,9 @@ const App: React.FC = () => {
                     />
                   </div>
               </div>
-          );
-      }
-
-      return (
-          <div className="p-6 md:p-12 animate-fade-in max-w-6xl mx-auto">
+         ) : (
+             /* HUB VIEW */
+             <div className="p-6 md:p-12 animate-fade-in max-w-6xl mx-auto">
               <div className="text-center mb-12">
                   <h2 className="text-3xl font-bold text-slate-800 mb-2">Central de Cadastros</h2>
                   <p className="text-slate-500 text-lg">Selecione o tipo de cadastro que deseja gerenciar</p>
@@ -811,8 +839,9 @@ const App: React.FC = () => {
                   </div>
               )}
           </div>
-      );
-  };
+         )}
+     </Suspense>
+  );
 
   const renderWorkBoard = () => {
     if (!selectedWork) return null;
@@ -980,44 +1009,50 @@ const App: React.FC = () => {
 
             {workTab === 'KANBAN' && (
                 <div className="h-full p-4 overflow-hidden">
-                    <KanbanBoard 
-                        tasks={activeTasks} 
-                        users={users}
-                        currentUser={currentUser}
-                        taskStatuses={taskStatuses}
-                        onUpdateTask={handleUpdateTask}
-                        onAddTask={handleAddTask}
-                        workId={selectedWork.id}
-                    />
+                    <Suspense fallback={<LoadingSpinner />}>
+                        <KanbanBoard 
+                            tasks={activeTasks} 
+                            users={users}
+                            currentUser={currentUser}
+                            taskStatuses={taskStatuses}
+                            onUpdateTask={handleUpdateTask}
+                            onAddTask={handleAddTask}
+                            workId={selectedWork.id}
+                        />
+                    </Suspense>
                 </div>
             )}
 
             {workTab === 'FINANCE' && hasPermission('viewFinance') && (
                 <div className="h-full p-6 overflow-y-auto">
-                    <FinanceView 
-                        records={activeFinance}
-                        currentUser={currentUser}
-                        users={users}
-                        work={selectedWork}
-                        financeCategories={financeCategories}
-                        onAddRecord={handleAddFinanceRecord}
-                        onUpdateRecord={handleUpdateFinanceRecord}
-                        onDeleteRecord={handleDeleteFinanceRecord}
-                        onAddCategory={handleAddCategory}
-                    />
+                    <Suspense fallback={<LoadingSpinner />}>
+                        <FinanceView 
+                            records={activeFinance}
+                            currentUser={currentUser}
+                            users={users}
+                            work={selectedWork}
+                            financeCategories={financeCategories}
+                            onAddRecord={handleAddFinanceRecord}
+                            onUpdateRecord={handleUpdateFinanceRecord}
+                            onDeleteRecord={handleDeleteFinanceRecord}
+                            onAddCategory={handleAddCategory}
+                        />
+                    </Suspense>
                 </div>
             )}
 
             {workTab === 'LOGS' && (
                 <div className="h-full p-6 overflow-y-auto">
-                    <DailyLogView 
-                        logs={activeLogs}
-                        users={users}
-                        tasks={activeTasks}
-                        workId={selectedWork.id}
-                        currentUser={currentUser}
-                        onAddLog={handleAddLog}
-                    />
+                    <Suspense fallback={<LoadingSpinner />}>
+                        <DailyLogView 
+                            logs={activeLogs}
+                            users={users}
+                            tasks={activeTasks}
+                            workId={selectedWork.id}
+                            currentUser={currentUser}
+                            onAddLog={handleAddLog}
+                        />
+                    </Suspense>
                 </div>
             )}
         </div>
@@ -1073,6 +1108,16 @@ const App: React.FC = () => {
   );
 
   const activeSidebarWorks = visibleWorks.filter(w => w.status !== WorkStatus.COMPLETED);
+
+  if (!isAuthenticated) {
+      return (
+          <AuthScreen 
+             users={users}
+             onLogin={handleLogin}
+             onRegister={handleRegister}
+          />
+      );
+  }
 
   if (isLoading) {
       return (
@@ -1193,43 +1238,49 @@ const App: React.FC = () => {
                 {activeTab === 'REGISTRATIONS' && hasPermission('manageUsers') && renderRegistrationHub()}
                 {activeTab === 'FINANCE' && hasPermission('viewFinance') && (
                     <div className="p-6">
-                        <FinanceView 
-                            records={finance} 
-                            currentUser={currentUser}
-                            users={users}
-                            financeCategories={financeCategories}
-                            onAddRecord={handleAddFinanceRecord}
-                            onUpdateRecord={handleUpdateFinanceRecord}
-                            onDeleteRecord={handleDeleteFinanceRecord}
-                            onAddCategory={handleAddCategory}
-                        />
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <FinanceView 
+                                records={finance} 
+                                currentUser={currentUser}
+                                users={users}
+                                financeCategories={financeCategories}
+                                onAddRecord={handleAddFinanceRecord}
+                                onUpdateRecord={handleUpdateFinanceRecord}
+                                onDeleteRecord={handleDeleteFinanceRecord}
+                                onAddCategory={handleAddCategory}
+                            />
+                        </Suspense>
                     </div>
                 )}
                 {activeTab === 'ALL_TASKS' && hasPermission('viewGlobalTasks') && (
-                    <GlobalTaskList 
-                        tasks={tasks}
-                        works={visibleWorks} 
-                        users={users}
-                        taskStatuses={taskStatuses}
-                        onUpdateTask={handleUpdateTask}
-                        onAddTask={handleAddTask}
-                    />
+                    <Suspense fallback={<LoadingSpinner />}>
+                        <GlobalTaskList 
+                            tasks={tasks}
+                            works={visibleWorks} 
+                            users={users}
+                            taskStatuses={taskStatuses}
+                            onUpdateTask={handleUpdateTask}
+                            onAddTask={handleAddTask}
+                        />
+                    </Suspense>
                 )}
                 {activeTab === 'MATERIALS' && hasPermission('viewMaterials') && (
-                    <MaterialOrders 
-                        orders={orders}
-                        works={works}
-                        tasks={tasks}
-                        users={users}
-                        materials={materials}
-                        currentUser={currentUser}
-                        onAddOrder={handleAddOrder}
-                        onUpdateOrder={handleUpdateOrder}
-                        onOpenMaterialCatalog={() => {
-                            setActiveTab('REGISTRATIONS');
-                            setRegistrationSubTab('MATERIALS');
-                        }}
-                    />
+                    <Suspense fallback={<LoadingSpinner />}>
+                        <MaterialOrders 
+                            orders={orders}
+                            works={works}
+                            tasks={tasks}
+                            users={users}
+                            materials={materials}
+                            currentUser={currentUser}
+                            onAddOrder={handleAddOrder}
+                            onUpdateOrder={handleUpdateOrder}
+                            onOpenMaterialCatalog={() => {
+                                setActiveTab('REGISTRATIONS');
+                                setRegistrationSubTab('MATERIALS');
+                            }}
+                        />
+                    </Suspense>
                 )}
             </div>
         )}
