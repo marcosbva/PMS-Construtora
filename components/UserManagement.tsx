@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, UserProfile, AppPermissions, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut } from 'lucide-react';
+import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb } from '../services/firebase';
 
 interface UserManagementProps {
   users: User[];
@@ -47,6 +48,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   
+  // Cloud Config State
+  const [firebaseConfig, setFirebaseConfig] = useState({
+      apiKey: '',
+      authDomain: '',
+      projectId: '',
+      storageBucket: '',
+      messagingSenderId: '',
+      appId: ''
+  });
+  const [isCloudConnected, setIsCloudConnected] = useState(!!getDb());
+
+  useEffect(() => {
+      const saved = getSavedConfig();
+      if (saved) {
+          setFirebaseConfig(saved);
+          setIsCloudConnected(true);
+      }
+  }, []);
+
   // Editing State
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingProfile, setEditingProfile] = useState<UserProfile | null>(null);
@@ -139,6 +159,29 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           supplierName: supplier ? supplier.name : 'Não ident.',
           date: last.purchaseDate
       };
+  };
+
+  // --- HANDLERS: CLOUD ---
+  const handleConnectCloud = () => {
+      if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+          alert("Preencha pelo menos a API Key e o Project ID.");
+          return;
+      }
+      const success = initializeFirebase(firebaseConfig);
+      if (success) {
+          setIsCloudConnected(true);
+          alert("Conectado com sucesso! O sistema será recarregado para baixar os dados da nuvem.");
+          window.location.reload();
+      } else {
+          alert("Falha ao conectar. Verifique as credenciais.");
+      }
+  };
+
+  const handleDisconnectCloud = () => {
+      if(window.confirm("Tem certeza? O sistema voltará para o modo local e você não verá mais os dados da equipe até reconectar.")) {
+          disconnectFirebase();
+          setIsCloudConnected(false);
+      }
   };
 
   // --- HANDLERS: USERS ---
@@ -406,7 +449,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Cadastros e Acessos</h2>
-          <p className="text-slate-500">Gerencie colaboradores, clientes, fornecedores e materiais.</p>
+          <p className="text-slate-500">Gerencie colaboradores, clientes, fornecedores e configurações.</p>
         </div>
         
         {/* Main Action Button */}
@@ -433,7 +476,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           <TabButton active={activeTab === 'SUPPLIERS'} onClick={() => setActiveTab('SUPPLIERS')} icon={<Truck size={18}/>} label="Fornecedores" />
           <TabButton active={activeTab === 'MATERIALS'} onClick={() => setActiveTab('MATERIALS')} icon={<Package size={18}/>} label="Materiais" />
           <TabButton active={activeTab === 'FINANCE_CATEGORIES'} onClick={() => setActiveTab('FINANCE_CATEGORIES')} icon={<Wallet size={18}/>} label="Categorias Financeiras" />
-          <TabButton active={activeTab === 'PROFILES'} onClick={() => setActiveTab('PROFILES')} icon={<Shield size={18}/>} label="Perfis de Acesso" />
+          <TabButton active={activeTab === 'PROFILES'} onClick={() => setActiveTab('PROFILES')} icon={<Shield size={18}/>} label="Perfis" />
           <TabButton active={activeTab === 'SETTINGS'} onClick={() => setActiveTab('SETTINGS')} icon={<Settings size={18}/>} label="Configurações" />
       </div>
 
@@ -720,9 +763,103 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           </div>
       )}
 
-      {/* --- SETTINGS TAB CONTENT (Task Statuses) --- */}
+      {/* --- SETTINGS TAB CONTENT (CLOUD & STATUSES) --- */}
       {activeTab === 'SETTINGS' && (
         <div className="animate-fade-in space-y-8">
+          
+          {/* Cloud Connection Panel */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                 <div>
+                   <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                       <Cloud size={24} className={isCloudConnected ? "text-green-600" : "text-slate-400"} />
+                       Conexão Nuvem (Google Cloud / Firebase)
+                   </h3>
+                   <p className="text-sm text-slate-500">
+                       {isCloudConnected 
+                         ? "Seu sistema está conectado e sincronizando dados com a nuvem." 
+                         : "Configure seu banco de dados para habilitar o uso em equipe e backup automático."}
+                   </p>
+                 </div>
+                 <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${isCloudConnected ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
+                     <div className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-green-600 animate-pulse' : 'bg-slate-500'}`}></div>
+                     {isCloudConnected ? 'ONLINE' : 'OFFLINE (Local)'}
+                 </div>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                  {!isCloudConnected ? (
+                      <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg mb-4 text-sm text-blue-800">
+                          <strong>Como ativar a nuvem:</strong><br/>
+                          1. Crie um projeto gratuito no <a href="https://console.firebase.google.com" target="_blank" className="underline font-bold">Firebase Console</a>.<br/>
+                          2. Adicione um "App Web" e copie as credenciais.<br/>
+                          3. Ative o "Firestore Database" no modo de teste.<br/>
+                          4. Cole as credenciais abaixo.
+                      </div>
+                  ) : (
+                      <div className="bg-green-50 border border-green-100 p-4 rounded-lg mb-4 text-sm text-green-800 flex justify-between items-center">
+                          <span>Você está usando o projeto: <strong>{firebaseConfig.projectId}</strong></span>
+                          <button onClick={handleDisconnectCloud} className="text-red-600 hover:underline font-bold flex items-center gap-1 text-xs"><LogOut size={14}/> Desconectar</button>
+                      </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">API Key</label>
+                          <input 
+                             type="text" 
+                             className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                             value={firebaseConfig.apiKey}
+                             onChange={e => setFirebaseConfig({...firebaseConfig, apiKey: e.target.value})}
+                             disabled={isCloudConnected}
+                             placeholder="AIzaSy..."
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Project ID</label>
+                          <input 
+                             type="text" 
+                             className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-pms-500 outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                             value={firebaseConfig.projectId}
+                             onChange={e => setFirebaseConfig({...firebaseConfig, projectId: e.target.value})}
+                             disabled={isCloudConnected}
+                             placeholder="meu-projeto-123"
+                          />
+                      </div>
+                      {/* Optional Fields Hidden for Simplicity unless filled */}
+                      <div className={isCloudConnected ? '' : 'hidden md:block'}>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Auth Domain (Opcional)</label>
+                          <input 
+                             type="text" 
+                             className="w-full border border-slate-300 rounded-lg p-2 text-sm disabled:bg-slate-100"
+                             value={firebaseConfig.authDomain}
+                             onChange={e => setFirebaseConfig({...firebaseConfig, authDomain: e.target.value})}
+                             disabled={isCloudConnected}
+                          />
+                      </div>
+                      <div className={isCloudConnected ? '' : 'hidden md:block'}>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">App ID (Opcional)</label>
+                          <input 
+                             type="text" 
+                             className="w-full border border-slate-300 rounded-lg p-2 text-sm disabled:bg-slate-100"
+                             value={firebaseConfig.appId}
+                             onChange={e => setFirebaseConfig({...firebaseConfig, appId: e.target.value})}
+                             disabled={isCloudConnected}
+                          />
+                      </div>
+                  </div>
+
+                  {!isCloudConnected && (
+                      <button 
+                        onClick={handleConnectCloud}
+                        className="bg-pms-600 text-white font-bold px-6 py-2 rounded-lg hover:bg-pms-500 transition-colors flex items-center gap-2"
+                      >
+                          <Save size={18} /> Salvar e Conectar
+                      </button>
+                  )}
+              </div>
+          </div>
+
           {/* Task Statuses Section */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center">

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, UserRole, UserProfile } from '../types';
-import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface AuthScreenProps {
   users: User[];
@@ -18,11 +18,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLogin, onRegist
   const [name, setName] = useState('');
   const [error, setError] = useState('');
 
+  // Se não houver usuários, força o modo de registro inicial
+  const isFirstSetup = users.length === 0;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (isRegistering) {
+    if (isRegistering || isFirstSetup) {
         // Registration Logic
         if (!email || !password || !name) {
             setError('Preencha todos os campos.');
@@ -35,14 +38,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLogin, onRegist
             return;
         }
 
-        // Create new user (Defaulting to Master/Employee for demo purposes)
+        // Se for o primeiro usuário do sistema, ele é ADMIN automaticamente
+        const role = isFirstSetup ? UserRole.ADMIN : UserRole.MASTER;
+        const profileId = isFirstSetup ? 'p_admin' : 'p_partner';
+
         const newUser: User = {
             id: Math.random().toString(36).substr(2, 9),
             name,
             email,
-            role: UserRole.MASTER, // Give them some permissions to test
+            role: role,
             category: 'EMPLOYEE',
-            profileId: 'p_partner', // Map to a partner profile so they can see things
+            profileId: profileId,
             avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0ea5e9&color=fff`
         };
         
@@ -83,9 +89,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLogin, onRegist
                     <p className="text-slate-500 text-sm">Sistema de Gestão Integrada</p>
                 </div>
 
+                {isFirstSetup && (
+                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                        <ShieldCheck className="text-blue-600 shrink-0 mt-1" size={20} />
+                        <div>
+                            <h3 className="text-sm font-bold text-blue-800">Configuração Inicial</h3>
+                            <p className="text-xs text-blue-600 mt-1">
+                                Nenhum usuário encontrado. Crie a conta do <strong>Administrador</strong> para começar.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    {isRegistering && (
-                         <div className="space-y-1">
+                    {(isRegistering || isFirstSetup) && (
+                         <div className="space-y-1 animate-in slide-in-from-top-2">
                             <label className="text-xs font-bold text-slate-600 ml-1">Nome Completo</label>
                             <div className="relative">
                                 <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -95,6 +113,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLogin, onRegist
                                     placeholder="Ex: Carlos Silva"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
+                                    autoFocus={isFirstSetup}
                                 />
                             </div>
                         </div>
@@ -139,35 +158,37 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users, onLogin, onRegist
                         type="submit"
                         className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg group"
                     >
-                        {isRegistering ? 'Criar Conta' : 'Acessar Sistema'}
+                        {isFirstSetup ? 'Criar Admin e Iniciar' : (isRegistering ? 'Criar Conta' : 'Acessar Sistema')}
                         <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                     </button>
                 </form>
 
                 <div className="mt-6 text-center">
-                    <p className="text-sm text-slate-500">
-                        {isRegistering ? 'Já tem uma conta?' : 'Ainda não tem acesso?'}
-                        <button 
-                            onClick={() => {
-                                setIsRegistering(!isRegistering);
-                                setError('');
-                                setEmail('');
-                                setPassword('');
-                                setName('');
-                            }}
-                            className="ml-2 font-bold text-pms-600 hover:underline"
-                        >
-                            {isRegistering ? 'Fazer Login' : 'Cadastre-se'}
-                        </button>
-                    </p>
+                    {!isFirstSetup && (
+                        <p className="text-sm text-slate-500">
+                            {isRegistering ? 'Já tem uma conta?' : 'Ainda não tem acesso?'}
+                            <button 
+                                onClick={() => {
+                                    setIsRegistering(!isRegistering);
+                                    setError('');
+                                    setEmail('');
+                                    setPassword('');
+                                    setName('');
+                                }}
+                                className="ml-2 font-bold text-pms-600 hover:underline"
+                            >
+                                {isRegistering ? 'Fazer Login' : 'Cadastre-se'}
+                            </button>
+                        </p>
+                    )}
                 </div>
             </div>
             
             {/* Footer Hint */}
-            {!isRegistering && (
+            {!isRegistering && !isFirstSetup && (
                 <div className="bg-slate-50 p-4 text-center border-t border-slate-100">
                     <p className="text-xs text-slate-400">
-                        Dica Demo: Use <strong>marcos@pms.com</strong> e qualquer senha.
+                        Seus dados estão seguros localmente neste dispositivo.
                     </p>
                 </div>
             )}

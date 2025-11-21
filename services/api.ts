@@ -1,107 +1,204 @@
+
 import { 
     User, ConstructionWork, Task, FinancialRecord, DailyLog, MaterialOrder, Material, 
     UserProfile, TaskStatusDefinition, FinanceCategoryDefinition 
 } from '../types';
 import { 
-    MOCK_USERS, MOCK_WORKS, MOCK_TASKS, MOCK_FINANCE, MOCK_LOGS, MOCK_MATERIALS, 
-    MOCK_ORDERS, MOCK_PROFILES, DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES 
+    MOCK_PROFILES, DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES 
 } from '../constants';
+import { getDb } from './firebase';
+import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc } from "firebase/firestore";
 
-// Automatically detects if running locally or in production (Vite env vars)
-// We use type assertion to avoid TS errors if types are missing
-const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api';
+/**
+ * API SERVICE HÍBRIDA (Dynnamic DB)
+ * - Verifica a cada chamada se getDb() retorna uma instância válida do Firestore.
+ * - Se sim, usa Nuvem (Equipe).
+ * - Se não, usa LocalStorage (Pessoal/Teste).
+ */
 
-// Helper to try fetching from backend, fallback to mock if fails
-async function fetchWithFallback<T>(endpoint: string, mockData: T): Promise<T> {
+const DB_KEYS = {
+    WORKS: 'pms_works',
+    USERS: 'pms_users',
+    PROFILES: 'pms_profiles',
+    TASKS: 'pms_tasks',
+    FINANCE: 'pms_finance',
+    LOGS: 'pms_logs',
+    MATERIALS: 'pms_materials',
+    ORDERS: 'pms_orders',
+    STATUSES: 'pms_statuses',
+    CATEGORIES: 'pms_categories'
+};
+
+// --- HELPER: LOCAL STORAGE ---
+const localLoad = <T>(key: string, fallback: T): T => {
+    const stored = localStorage.getItem(key);
+    if (!stored) return fallback;
+    try { return JSON.parse(stored); } catch (e) { return fallback; }
+};
+const localSave = (key: string, data: any) => {
+    localStorage.setItem(key, JSON.stringify(data));
+};
+
+// --- HELPER: FIREBASE ---
+const getCollectionData = async <T>(collectionName: string): Promise<T[]> => {
+    const db = getDb();
+    if (!db) return [];
     try {
-        const response = await fetch(`${API_URL}${endpoint}`);
-        if (!response.ok) throw new Error('Backend unavailable');
-        return await response.json();
+        const querySnapshot = await getDocs(collection(db, collectionName));
+        return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as T[];
     } catch (error) {
-        console.warn(`API Error on ${endpoint}: Using Fallback Data.`);
-        return mockData;
+        console.error(`Erro ao ler coleção ${collectionName}:`, error);
+        throw error;
     }
-}
-
-// Helper for POST/PUT/DELETE
-async function sendData<T>(endpoint: string, method: 'POST' | 'PUT' | 'DELETE', data?: any): Promise<T | null> {
-    try {
-        const response = await fetch(`${API_URL}${endpoint}`, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        if (!response.ok) throw new Error('Action failed');
-        return await response.json();
-    } catch (error) {
-        console.error(`API Action Error ${method} ${endpoint}:`, error);
-        // In a real app, you might throw here. For this demo, we assume success in UI 
-        // if backend is down to keep the "Simulation" alive.
-        return data as T; 
-    }
-}
+};
 
 export const api = {
+    // Verificar status
+    isOnline: () => !!getDb(),
+
     // --- INITIAL LOAD ---
     getAllData: async () => {
-        try {
-            const response = await fetch(`${API_URL}/initial-data`);
-            if (!response.ok) throw new Error('Backend unavailable');
-            return await response.json();
-        } catch (error) {
-            console.warn("Backend offline or CORS error. Loading complete Mock set.");
+        const db = getDb();
+        if (db) {
+            // MODO ONLINE (FIREBASE)
+            try {
+                const [works, users, profiles, tasks, finance, logs, materials, orders, taskStatuses, financeCategories] = await Promise.all([
+                    getCollectionData<ConstructionWork>('works'),
+                    getCollectionData<User>('users'),
+                    getCollectionData<UserProfile>('profiles'),
+                    getCollectionData<Task>('tasks'),
+                    getCollectionData<FinancialRecord>('finance'),
+                    getCollectionData<DailyLog>('logs'),
+                    getCollectionData<Material>('materials'),
+                    getCollectionData<MaterialOrder>('orders'),
+                    getCollectionData<TaskStatusDefinition>('statuses'),
+                    getCollectionData<FinanceCategoryDefinition>('categories')
+                ]);
+
+                // Se for a primeira vez no Firebase e estiver vazio, usa os defaults estruturais
+                return {
+                    works, users, 
+                    profiles: profiles.length ? profiles : MOCK_PROFILES,
+                    tasks, finance, logs, materials, orders,
+                    taskStatuses: taskStatuses.length ? taskStatuses : DEFAULT_TASK_STATUSES,
+                    financeCategories: financeCategories.length ? financeCategories : DEFAULT_FINANCE_CATEGORIES
+                };
+            } catch (error) {
+                console.error("Erro crítico ao carregar do Firebase:", error);
+                alert("Erro ao conectar na nuvem. Verifique suas credenciais em Configurações.");
+                // Fallback para evitar crash total, retorna vazio
+                return { works: [], users: [], profiles: [], tasks: [], finance: [], logs: [], materials: [], orders: [], taskStatuses: [], financeCategories: [] };
+            }
+        } else {
+            // MODO OFFLINE (LOCALSTORAGE)
+            await new Promise(resolve => setTimeout(resolve, 300)); 
             return {
-                works: MOCK_WORKS,
-                users: MOCK_USERS,
-                profiles: MOCK_PROFILES,
-                tasks: MOCK_TASKS,
-                finance: MOCK_FINANCE,
-                logs: MOCK_LOGS,
-                materials: MOCK_MATERIALS,
-                orders: MOCK_ORDERS,
-                taskStatuses: DEFAULT_TASK_STATUSES,
-                financeCategories: DEFAULT_FINANCE_CATEGORIES
+                works: localLoad<ConstructionWork[]>(DB_KEYS.WORKS, []),
+                users: localLoad<User[]>(DB_KEYS.USERS, []),
+                profiles: localLoad<UserProfile[]>(DB_KEYS.PROFILES, MOCK_PROFILES),
+                tasks: localLoad<Task[]>(DB_KEYS.TASKS, []),
+                finance: localLoad<FinancialRecord[]>(DB_KEYS.FINANCE, []),
+                logs: localLoad<DailyLog[]>(DB_KEYS.LOGS, []),
+                materials: localLoad<Material[]>(DB_KEYS.MATERIALS, []),
+                orders: localLoad<MaterialOrder[]>(DB_KEYS.ORDERS, []),
+                taskStatuses: localLoad<TaskStatusDefinition[]>(DB_KEYS.STATUSES, DEFAULT_TASK_STATUSES),
+                financeCategories: localLoad<FinanceCategoryDefinition[]>(DB_KEYS.CATEGORIES, DEFAULT_FINANCE_CATEGORIES)
             };
         }
     },
 
-    // --- WORKS ---
-    createWork: (work: ConstructionWork) => sendData<ConstructionWork>('/works', 'POST', work),
-    updateWork: (work: ConstructionWork) => sendData<ConstructionWork>(`/works/${work.id}`, 'PUT', work),
+    // --- GENERIC CRUD WRAPPERS ---
+    // Helper para decidir onde salvar
+    save: async (collectionName: string, id: string, data: any, localKey: string) => {
+        const db = getDb();
+        if (db) {
+            await setDoc(doc(db, collectionName, id), data);
+        } else {
+            const items = localLoad<any[]>(localKey, []);
+            // Update or Create logic for local array
+            const index = items.findIndex((i: any) => i.id === id);
+            if (index >= 0) items[index] = data;
+            else items.push(data);
+            localSave(localKey, items);
+        }
+    },
 
-    // --- USERS ---
-    createUser: (user: User) => sendData<User>('/users', 'POST', user),
-    updateUser: (user: User) => sendData<User>(`/users/${user.id}`, 'PUT', user),
-    deleteUser: (id: string) => sendData<void>(`/users/${id}`, 'DELETE'),
+    delete: async (collectionName: string, id: string, localKey: string) => {
+        const db = getDb();
+        if (db) {
+            await deleteDoc(doc(db, collectionName, id));
+        } else {
+            const items = localLoad<any[]>(localKey, []);
+            localSave(localKey, items.filter((i: any) => i.id !== id));
+        }
+    },
 
-    // --- TASKS ---
-    createTask: (task: Task) => sendData<Task>('/tasks', 'POST', task),
-    updateTask: (task: Task) => sendData<Task>(`/tasks/${task.id}`, 'PUT', task),
+    // --- SPECIFIC METHODS (Keeping signatures compatible) ---
+    
+    // Works
+    createWork: async (item: ConstructionWork) => { await api.save('works', item.id, item, DB_KEYS.WORKS); return item; },
+    updateWork: async (item: ConstructionWork) => { await api.save('works', item.id, item, DB_KEYS.WORKS); return item; },
 
-    // --- FINANCE ---
-    createFinance: (rec: FinancialRecord) => sendData<FinancialRecord>('/finance', 'POST', rec),
-    updateFinance: (rec: FinancialRecord) => sendData<FinancialRecord>(`/finance/${rec.id}`, 'PUT', rec),
-    deleteFinance: (id: string) => sendData<void>(`/finance/${id}`, 'DELETE'),
+    // Users
+    createUser: async (item: User) => { await api.save('users', item.id, item, DB_KEYS.USERS); return item; },
+    updateUser: async (item: User) => { await api.save('users', item.id, item, DB_KEYS.USERS); return item; },
+    deleteUser: async (id: string) => { await api.delete('users', id, DB_KEYS.USERS); },
 
-    // --- LOGS ---
-    createLog: (log: DailyLog) => sendData<DailyLog>('/logs', 'POST', log),
+    // Tasks
+    createTask: async (item: Task) => { await api.save('tasks', item.id, item, DB_KEYS.TASKS); return item; },
+    updateTask: async (item: Task) => { await api.save('tasks', item.id, item, DB_KEYS.TASKS); return item; },
 
-    // --- MATERIALS ---
-    createMaterial: (mat: Material) => sendData<Material>('/materials', 'POST', mat),
-    updateMaterial: (mat: Material) => sendData<Material>(`/materials/${mat.id}`, 'PUT', mat),
-    deleteMaterial: (id: string) => sendData<void>(`/materials/${id}`, 'DELETE'),
+    // Finance
+    createFinance: async (item: FinancialRecord) => { await api.save('finance', item.id, item, DB_KEYS.FINANCE); return item; },
+    updateFinance: async (item: FinancialRecord) => { await api.save('finance', item.id, item, DB_KEYS.FINANCE); return item; },
+    deleteFinance: async (id: string) => { await api.delete('finance', id, DB_KEYS.FINANCE); },
 
-    // --- ORDERS ---
-    createOrder: (order: MaterialOrder) => sendData<MaterialOrder>('/orders', 'POST', order),
-    updateOrder: (order: MaterialOrder) => sendData<MaterialOrder>(`/orders/${order.id}`, 'PUT', order),
+    // Logs
+    createLog: async (item: DailyLog) => { 
+        const db = getDb();
+        if (db) {
+            await setDoc(doc(db, 'logs', item.id), item);
+        } else {
+            const items = localLoad<DailyLog[]>(DB_KEYS.LOGS, []);
+            items.unshift(item); // Logs usually prepend locally
+            localSave(DB_KEYS.LOGS, items);
+        }
+        return item;
+    },
 
-    // --- SETTINGS ---
-    createProfile: (p: UserProfile) => sendData<UserProfile>('/profiles', 'POST', p),
-    updateProfile: (p: UserProfile) => sendData<UserProfile>(`/profiles/${p.id}`, 'PUT', p),
-    createCategory: (c: FinanceCategoryDefinition) => sendData<FinanceCategoryDefinition>('/categories', 'POST', c),
-    updateStatuses: (statuses: TaskStatusDefinition[]) => {
-        // Batch update usually requires specific endpoint, implementing simplified here
-        // In production: POST /api/statuses/batch
-        return Promise.resolve(statuses); 
+    // Materials
+    createMaterial: async (item: Material) => { await api.save('materials', item.id, item, DB_KEYS.MATERIALS); return item; },
+    updateMaterial: async (item: Material) => { await api.save('materials', item.id, item, DB_KEYS.MATERIALS); return item; },
+    deleteMaterial: async (id: string) => { await api.delete('materials', id, DB_KEYS.MATERIALS); },
+
+    // Orders
+    createOrder: async (item: MaterialOrder) => { await api.save('orders', item.id, item, DB_KEYS.ORDERS); return item; },
+    updateOrder: async (item: MaterialOrder) => { await api.save('orders', item.id, item, DB_KEYS.ORDERS); return item; },
+
+    // Configs
+    createProfile: async (item: UserProfile) => { await api.save('profiles', item.id, item, DB_KEYS.PROFILES); return item; },
+    updateProfile: async (item: UserProfile) => { await api.save('profiles', item.id, item, DB_KEYS.PROFILES); return item; },
+    deleteProfile: async (id: string) => { await api.delete('profiles', id, DB_KEYS.PROFILES); },
+    
+    createCategory: async (item: FinanceCategoryDefinition) => { await api.save('categories', item.id, item, DB_KEYS.CATEGORIES); return item; },
+    updateCategory: async (item: FinanceCategoryDefinition) => { await api.save('categories', item.id, item, DB_KEYS.CATEGORIES); return item; },
+    deleteCategory: async (id: string) => { await api.delete('categories', id, DB_KEYS.CATEGORIES); },
+
+    updateStatuses: async (statuses: TaskStatusDefinition[]) => {
+        const db = getDb();
+        if (db) {
+            // Em Firestore, idealmente salvaríamos em um doc de config único.
+            // Para manter consistência simples, vamos iterar e salvar como coleção 'statuses'
+            // Nota: Isso pode ser lento se houver muitos status, mas geralmente são poucos (<10).
+            // Primeiro, deletamos os antigos? Ou sobrescrevemos. 
+            // Para simplificar neste MVP híbrido, salvamos um doc especial com array JSON ou sobrescrevemos ids fixos.
+            // Vamos usar uma abordagem robusta: Salvar cada status como doc.
+            for (const s of statuses) {
+                await setDoc(doc(db, 'statuses', s.id), s);
+            }
+        } else {
+            localSave(DB_KEYS.STATUSES, statuses);
+        }
+        return statuses;
     }
 };
