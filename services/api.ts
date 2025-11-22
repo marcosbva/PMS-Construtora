@@ -1,25 +1,31 @@
 
 import { 
     User, ConstructionWork, Task, FinancialRecord, DailyLog, MaterialOrder, Material, 
-    UserProfile, TaskStatusDefinition, FinanceCategoryDefinition 
+    TaskStatusDefinition, FinanceCategoryDefinition, UserRole, UserCategory 
 } from '../types';
 import { 
-    MOCK_PROFILES, DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES 
+    DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS 
 } from '../constants';
 import { getDb } from './firebase';
-import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc } from "firebase/firestore";
+import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc, writeBatch, query, where } from "firebase/firestore";
 
-/**
- * API SERVICE HÍBRIDA (Dynnamic DB)
- * - Verifica a cada chamada se getDb() retorna uma instância válida do Firestore.
- * - Se sim, usa Nuvem (Equipe).
- * - Se não, usa LocalStorage (Pessoal/Teste).
- */
+// Nomes das coleções no Firestore
+const COLLECTIONS = {
+    WORKS: 'works',
+    USERS: 'users',
+    TASKS: 'tasks',
+    FINANCE: 'finance',
+    LOGS: 'logs',
+    MATERIALS: 'materials',
+    ORDERS: 'orders',
+    STATUSES: 'statuses',
+    CATEGORIES: 'categories' 
+};
 
-const DB_KEYS = {
+// Chaves para LocalStorage (Fallback Offline)
+const LOCAL_KEYS = {
     WORKS: 'pms_works',
     USERS: 'pms_users',
-    PROFILES: 'pms_profiles',
     TASKS: 'pms_tasks',
     FINANCE: 'pms_finance',
     LOGS: 'pms_logs',
@@ -39,7 +45,7 @@ const localSave = (key: string, data: any) => {
     localStorage.setItem(key, JSON.stringify(data));
 };
 
-// --- HELPER: FIREBASE ---
+// --- HELPER: FIREBASE FETCH ---
 const getCollectionData = async <T>(collectionName: string): Promise<T[]> => {
     const db = getDb();
     if (!db) return [];
@@ -48,7 +54,7 @@ const getCollectionData = async <T>(collectionName: string): Promise<T[]> => {
         return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as T[];
     } catch (error) {
         console.error(`Erro ao ler coleção ${collectionName}:`, error);
-        throw error;
+        return [];
     }
 };
 
@@ -56,66 +62,142 @@ export const api = {
     // Verificar status
     isOnline: () => !!getDb(),
 
-    // --- INITIAL LOAD ---
-    getAllData: async () => {
+    // --- SEED REFACTOR (NO PROFILES) ---
+    checkAndSeedInitialData: async () => {
         const db = getDb();
-        if (db) {
-            // MODO ONLINE (FIREBASE)
-            try {
-                const [works, users, profiles, tasks, finance, logs, materials, orders, taskStatuses, financeCategories] = await Promise.all([
-                    getCollectionData<ConstructionWork>('works'),
-                    getCollectionData<User>('users'),
-                    getCollectionData<UserProfile>('profiles'),
-                    getCollectionData<Task>('tasks'),
-                    getCollectionData<FinancialRecord>('finance'),
-                    getCollectionData<DailyLog>('logs'),
-                    getCollectionData<Material>('materials'),
-                    getCollectionData<MaterialOrder>('orders'),
-                    getCollectionData<TaskStatusDefinition>('statuses'),
-                    getCollectionData<FinanceCategoryDefinition>('categories')
-                ]);
+        if (!db) return;
 
-                // Se for a primeira vez no Firebase e estiver vazio, usa os defaults estruturais
-                return {
-                    works, users, 
-                    profiles: profiles.length ? profiles : MOCK_PROFILES,
-                    tasks, finance, logs, materials, orders,
-                    taskStatuses: taskStatuses.length ? taskStatuses : DEFAULT_TASK_STATUSES,
-                    financeCategories: financeCategories.length ? financeCategories : DEFAULT_FINANCE_CATEGORIES
-                };
-            } catch (error) {
-                console.error("Erro crítico ao carregar do Firebase:", error);
-                alert("Erro ao conectar na nuvem. Verifique suas credenciais em Configurações.");
-                // Fallback para evitar crash total, retorna vazio
-                return { works: [], users: [], profiles: [], tasks: [], finance: [], logs: [], materials: [], orders: [], taskStatuses: [], financeCategories: [] };
+        try {
+            console.log("🌱 Verificando integridade estrutural do banco...");
+
+            // Rescue Logic
+            const rescueEmail = "marcosbva@gmail.com";
+            const usersRef = collection(db, COLLECTIONS.USERS);
+            const q = query(usersRef, where("email", "==", rescueEmail));
+            const rescueSnap = await getDocs(q);
+
+            if (!rescueSnap.empty) {
+                const userDoc = rescueSnap.docs[0];
+                await updateDoc(doc(db, COLLECTIONS.USERS, userDoc.id), {
+                    role: UserRole.ADMIN,
+                    status: 'ACTIVE',
+                    category: UserCategory.INTERNAL
+                });
+                console.log(`🔓 ACESSO RESTAURADO: Usuário ${rescueEmail} definido como ADMIN.`);
             }
-        } else {
-            // MODO OFFLINE (LOCALSTORAGE)
-            await new Promise(resolve => setTimeout(resolve, 300)); 
-            return {
-                works: localLoad<ConstructionWork[]>(DB_KEYS.WORKS, []),
-                users: localLoad<User[]>(DB_KEYS.USERS, []),
-                profiles: localLoad<UserProfile[]>(DB_KEYS.PROFILES, MOCK_PROFILES),
-                tasks: localLoad<Task[]>(DB_KEYS.TASKS, []),
-                finance: localLoad<FinancialRecord[]>(DB_KEYS.FINANCE, []),
-                logs: localLoad<DailyLog[]>(DB_KEYS.LOGS, []),
-                materials: localLoad<Material[]>(DB_KEYS.MATERIALS, []),
-                orders: localLoad<MaterialOrder[]>(DB_KEYS.ORDERS, []),
-                taskStatuses: localLoad<TaskStatusDefinition[]>(DB_KEYS.STATUSES, DEFAULT_TASK_STATUSES),
-                financeCategories: localLoad<FinanceCategoryDefinition[]>(DB_KEYS.CATEGORIES, DEFAULT_FINANCE_CATEGORIES)
-            };
+            
+            // Check if basic config exists (using Categories as canary)
+            const catSnap = await getDocs(collection(db, COLLECTIONS.CATEGORIES));
+            
+            if (catSnap.empty) {
+                console.warn("⚠️ Banco de dados detectado como VAZIO ou INCOMPLETO.");
+                console.log("🚀 Iniciando Bootstrapping...");
+                
+                const batch = writeBatch(db);
+                let opsCount = 0;
+
+                DEFAULT_FINANCE_CATEGORIES.forEach(c => {
+                    const ref = doc(db, COLLECTIONS.CATEGORIES, c.id);
+                    batch.set(ref, c);
+                    opsCount++;
+                });
+
+                DEFAULT_TASK_STATUSES.forEach(s => {
+                    const ref = doc(db, COLLECTIONS.STATUSES, s.id);
+                    batch.set(ref, s);
+                    opsCount++;
+                });
+
+                DEFAULT_MATERIALS.forEach(m => {
+                    const ref = doc(db, COLLECTIONS.MATERIALS, m.id);
+                    batch.set(ref, m);
+                    opsCount++;
+                });
+
+                if (opsCount > 0) {
+                    await batch.commit();
+                    console.log(`✅ Bootstrapping concluído! ${opsCount} registros criados.`);
+                }
+            }
+
+        } catch (error) {
+            console.error("❌ Erro Crítico no Bootstrapping do Banco:", error);
+            throw error;
         }
     },
 
-    // --- GENERIC CRUD WRAPPERS ---
-    // Helper para decidir onde salvar
+    restoreDefaults: async () => {
+        const db = getDb();
+        if(!db) return;
+        if(!window.confirm("Isso irá recriar Categorias e Status. Continuar?")) return;
+        const batch = writeBatch(db);
+        DEFAULT_FINANCE_CATEGORIES.forEach(c => batch.set(doc(db, COLLECTIONS.CATEGORIES, c.id), c));
+        DEFAULT_TASK_STATUSES.forEach(s => batch.set(doc(db, COLLECTIONS.STATUSES, s.id), s));
+        await batch.commit();
+        alert("Restaurado.");
+        window.location.reload();
+    },
+
+    testFirebaseConnection: async () => {
+        const db = getDb();
+        if (!db) { alert("Offline."); return; }
+        try {
+            await addDoc(collection(db, "test_connectivity"), { date: new Date().toISOString() });
+            alert("Conexão OK!");
+        } catch (e: any) {
+            alert(`Erro: ${e.message}`);
+        }
+    },
+
+    getAllData: async () => {
+        const db = getDb();
+        if (db) {
+            try {
+                const [works, users, tasks, finance, logs, materials, orders, taskStatuses, financeCategories] = await Promise.all([
+                    getCollectionData<ConstructionWork>(COLLECTIONS.WORKS),
+                    getCollectionData<User>(COLLECTIONS.USERS),
+                    getCollectionData<Task>(COLLECTIONS.TASKS),
+                    getCollectionData<FinancialRecord>(COLLECTIONS.FINANCE),
+                    getCollectionData<DailyLog>(COLLECTIONS.LOGS),
+                    getCollectionData<Material>(COLLECTIONS.MATERIALS),
+                    getCollectionData<MaterialOrder>(COLLECTIONS.ORDERS),
+                    getCollectionData<TaskStatusDefinition>(COLLECTIONS.STATUSES),
+                    getCollectionData<FinanceCategoryDefinition>(COLLECTIONS.CATEGORIES)
+                ]);
+                return { works, users, tasks, finance, logs, materials, orders, taskStatuses, financeCategories };
+            } catch (error) {
+                console.error("Erro ao carregar dados:", error);
+                return { works: [], users: [], tasks: [], finance: [], logs: [], materials: [], orders: [], taskStatuses: [], financeCategories: [] };
+            }
+        } else {
+            await new Promise(resolve => setTimeout(resolve, 300)); 
+            return {
+                works: localLoad(LOCAL_KEYS.WORKS, []),
+                users: localLoad(LOCAL_KEYS.USERS, []),
+                tasks: localLoad(LOCAL_KEYS.TASKS, []),
+                finance: localLoad(LOCAL_KEYS.FINANCE, []),
+                logs: localLoad(LOCAL_KEYS.LOGS, []),
+                materials: localLoad(LOCAL_KEYS.MATERIALS, DEFAULT_MATERIALS),
+                orders: localLoad(LOCAL_KEYS.ORDERS, []),
+                taskStatuses: localLoad(LOCAL_KEYS.STATUSES, DEFAULT_TASK_STATUSES),
+                financeCategories: localLoad(LOCAL_KEYS.CATEGORIES, DEFAULT_FINANCE_CATEGORIES)
+            };
+        }
+    },
+    
+    getUsers: async (): Promise<User[]> => {
+        const db = getDb();
+        if (db) return await getCollectionData<User>(COLLECTIONS.USERS);
+        return localLoad<User[]>(LOCAL_KEYS.USERS, []);
+    },
+
+    // GENERIC SAVE
     save: async (collectionName: string, id: string, data: any, localKey: string) => {
         const db = getDb();
         if (db) {
-            await setDoc(doc(db, collectionName, id), data);
+            await setDoc(doc(db, collectionName, id), data, { merge: true });
         } else {
             const items = localLoad<any[]>(localKey, []);
-            // Update or Create logic for local array
             const index = items.findIndex((i: any) => i.id === id);
             if (index >= 0) items[index] = data;
             else items.push(data);
@@ -123,6 +205,7 @@ export const api = {
         }
     },
 
+    // GENERIC DELETE
     delete: async (collectionName: string, id: string, localKey: string) => {
         const db = getDb();
         if (db) {
@@ -133,71 +216,41 @@ export const api = {
         }
     },
 
-    // --- SPECIFIC METHODS (Keeping signatures compatible) ---
-    
-    // Works
-    createWork: async (item: ConstructionWork) => { await api.save('works', item.id, item, DB_KEYS.WORKS); return item; },
-    updateWork: async (item: ConstructionWork) => { await api.save('works', item.id, item, DB_KEYS.WORKS); return item; },
+    createWork: async (item: ConstructionWork) => { await api.save(COLLECTIONS.WORKS, item.id, item, LOCAL_KEYS.WORKS); return item; },
+    updateWork: async (item: ConstructionWork) => { await api.save(COLLECTIONS.WORKS, item.id, item, LOCAL_KEYS.WORKS); return item; },
 
-    // Users
-    createUser: async (item: User) => { await api.save('users', item.id, item, DB_KEYS.USERS); return item; },
-    updateUser: async (item: User) => { await api.save('users', item.id, item, DB_KEYS.USERS); return item; },
-    deleteUser: async (id: string) => { await api.delete('users', id, DB_KEYS.USERS); },
+    createUser: async (item: User) => { await api.save(COLLECTIONS.USERS, item.id, item, LOCAL_KEYS.USERS); return item; },
+    updateUser: async (item: User) => { await api.save(COLLECTIONS.USERS, item.id, item, LOCAL_KEYS.USERS); return item; },
+    deleteUser: async (id: string) => { await api.delete(COLLECTIONS.USERS, id, LOCAL_KEYS.USERS); },
 
-    // Tasks
-    createTask: async (item: Task) => { await api.save('tasks', item.id, item, DB_KEYS.TASKS); return item; },
-    updateTask: async (item: Task) => { await api.save('tasks', item.id, item, DB_KEYS.TASKS); return item; },
+    createTask: async (item: Task) => { await api.save(COLLECTIONS.TASKS, item.id, item, LOCAL_KEYS.TASKS); return item; },
+    updateTask: async (item: Task) => { await api.save(COLLECTIONS.TASKS, item.id, item, LOCAL_KEYS.TASKS); return item; },
 
-    // Finance
-    createFinance: async (item: FinancialRecord) => { await api.save('finance', item.id, item, DB_KEYS.FINANCE); return item; },
-    updateFinance: async (item: FinancialRecord) => { await api.save('finance', item.id, item, DB_KEYS.FINANCE); return item; },
-    deleteFinance: async (id: string) => { await api.delete('finance', id, DB_KEYS.FINANCE); },
+    createFinance: async (item: FinancialRecord) => { await api.save(COLLECTIONS.FINANCE, item.id, item, LOCAL_KEYS.FINANCE); return item; },
+    updateFinance: async (item: FinancialRecord) => { await api.save(COLLECTIONS.FINANCE, item.id, item, LOCAL_KEYS.FINANCE); return item; },
+    deleteFinance: async (id: string) => { await api.delete(COLLECTIONS.FINANCE, id, LOCAL_KEYS.FINANCE); },
 
-    // Logs
-    createLog: async (item: DailyLog) => { 
-        const db = getDb();
-        if (db) {
-            await setDoc(doc(db, 'logs', item.id), item);
-        } else {
-            const items = localLoad<DailyLog[]>(DB_KEYS.LOGS, []);
-            items.unshift(item); // Logs usually prepend locally
-            localSave(DB_KEYS.LOGS, items);
-        }
-        return item;
-    },
+    createLog: async (item: DailyLog) => { await api.save(COLLECTIONS.LOGS, item.id, item, LOCAL_KEYS.LOGS); return item; },
 
-    // Materials
-    createMaterial: async (item: Material) => { await api.save('materials', item.id, item, DB_KEYS.MATERIALS); return item; },
-    updateMaterial: async (item: Material) => { await api.save('materials', item.id, item, DB_KEYS.MATERIALS); return item; },
-    deleteMaterial: async (id: string) => { await api.delete('materials', id, DB_KEYS.MATERIALS); },
+    createMaterial: async (item: Material) => { await api.save(COLLECTIONS.MATERIALS, item.id, item, LOCAL_KEYS.MATERIALS); return item; },
+    updateMaterial: async (item: Material) => { await api.save(COLLECTIONS.MATERIALS, item.id, item, LOCAL_KEYS.MATERIALS); return item; },
+    deleteMaterial: async (id: string) => { await api.delete(COLLECTIONS.MATERIALS, id, LOCAL_KEYS.MATERIALS); },
 
-    // Orders
-    createOrder: async (item: MaterialOrder) => { await api.save('orders', item.id, item, DB_KEYS.ORDERS); return item; },
-    updateOrder: async (item: MaterialOrder) => { await api.save('orders', item.id, item, DB_KEYS.ORDERS); return item; },
+    createOrder: async (item: MaterialOrder) => { await api.save(COLLECTIONS.ORDERS, item.id, item, LOCAL_KEYS.ORDERS); return item; },
+    updateOrder: async (item: MaterialOrder) => { await api.save(COLLECTIONS.ORDERS, item.id, item, LOCAL_KEYS.ORDERS); return item; },
 
-    // Configs
-    createProfile: async (item: UserProfile) => { await api.save('profiles', item.id, item, DB_KEYS.PROFILES); return item; },
-    updateProfile: async (item: UserProfile) => { await api.save('profiles', item.id, item, DB_KEYS.PROFILES); return item; },
-    deleteProfile: async (id: string) => { await api.delete('profiles', id, DB_KEYS.PROFILES); },
-    
-    createCategory: async (item: FinanceCategoryDefinition) => { await api.save('categories', item.id, item, DB_KEYS.CATEGORIES); return item; },
-    updateCategory: async (item: FinanceCategoryDefinition) => { await api.save('categories', item.id, item, DB_KEYS.CATEGORIES); return item; },
-    deleteCategory: async (id: string) => { await api.delete('categories', id, DB_KEYS.CATEGORIES); },
+    createCategory: async (item: FinanceCategoryDefinition) => { await api.save(COLLECTIONS.CATEGORIES, item.id, item, LOCAL_KEYS.CATEGORIES); return item; },
+    updateCategory: async (item: FinanceCategoryDefinition) => { await api.save(COLLECTIONS.CATEGORIES, item.id, item, LOCAL_KEYS.CATEGORIES); return item; },
+    deleteCategory: async (id: string) => { await api.delete(COLLECTIONS.CATEGORIES, id, LOCAL_KEYS.CATEGORIES); },
 
     updateStatuses: async (statuses: TaskStatusDefinition[]) => {
         const db = getDb();
         if (db) {
-            // Em Firestore, idealmente salvaríamos em um doc de config único.
-            // Para manter consistência simples, vamos iterar e salvar como coleção 'statuses'
-            // Nota: Isso pode ser lento se houver muitos status, mas geralmente são poucos (<10).
-            // Primeiro, deletamos os antigos? Ou sobrescrevemos. 
-            // Para simplificar neste MVP híbrido, salvamos um doc especial com array JSON ou sobrescrevemos ids fixos.
-            // Vamos usar uma abordagem robusta: Salvar cada status como doc.
-            for (const s of statuses) {
-                await setDoc(doc(db, 'statuses', s.id), s);
-            }
+            const batch = writeBatch(db);
+            statuses.forEach(s => batch.set(doc(db, COLLECTIONS.STATUSES, s.id), s));
+            await batch.commit();
         } else {
-            localSave(DB_KEYS.STATUSES, statuses);
+            localSave(LOCAL_KEYS.STATUSES, statuses);
         }
         return statuses;
     }

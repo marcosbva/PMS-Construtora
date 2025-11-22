@@ -1,51 +1,42 @@
 
-import { initializeApp, FirebaseApp } from "firebase/app";
+import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
 import { getFirestore, Firestore } from "firebase/firestore";
+import { getAuth, Auth } from "firebase/auth";
 
-// Variáveis para armazenar a instância ativa
-let app: FirebaseApp | undefined;
+// Configuração Fixa (Hardcoded)
+// Credenciais limpas e corrigidas para garantir conexão
+const firebaseConfig = {
+  apiKey: "AIzaSyBUajc87kmIEOt24bZkLXD26Vlwpy6V8SQ",
+  authDomain: "pms-engenharia-88ed8.firebaseapp.com",
+  projectId: "pms-engenharia-88ed8",
+  storageBucket: "pms-engenharia-88ed8.firebasestorage.app",
+  messagingSenderId: "268784474256",
+  appId: "1:268784474256:web:644f8fc994773561186015"
+};
+
+let app: FirebaseApp;
 let db: Firestore | null = null;
+let auth: Auth | null = null;
 
-const CONFIG_KEY = 'pms_firebase_config_v1';
-
-/**
- * Inicializa o Firebase com uma configuração fornecida.
- * Retorna true se sucesso, false se falha.
- */
-export const initializeFirebase = (config: any): boolean => {
-    if (!config || !config.apiKey || !config.projectId) {
-        console.warn("Configuração do Firebase inválida ou incompleta.");
-        return false;
+// Inicialização Robusta (Singleton Pattern para evitar erros de re-init no React/Vite)
+try {
+    if (getApps().length > 0) {
+        // Se já existe uma instância (ex: hot reload), usa ela
+        app = getApp();
+        console.log("🔄 Firebase reutilizado (HMR).");
+    } else {
+        // Se não existe, inicializa uma nova
+        app = initializeApp(firebaseConfig);
+        console.log("✅ Firebase inicializado com sucesso.");
     }
-
-    try {
-        // Verifica se já existe app inicializado com mesmo nome/config para evitar erros
-        // Simplificação: Tenta inicializar direto. Se falhar, pega erro.
-        app = initializeApp(config);
-        db = getFirestore(app);
-        
-        // Salva no LocalStorage para persistir entre refreshes
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-        
-        console.log("✅ Firebase (Google Cloud) conectado com sucesso!");
-        return true;
-    } catch (error) {
-        console.error("Erro ao inicializar Firebase:", error);
-        // Em caso de "App already exists", tentamos recuperar a instância (embora initializeApp deva lidar com isso em reload)
-        return false;
-    }
-};
-
-/**
- * Remove a configuração e desconecta.
- */
-export const disconnectFirebase = () => {
-    localStorage.removeItem(CONFIG_KEY);
-    db = null;
-    app = undefined;
-    // Recarrega a página para limpar estados globais
-    window.location.reload();
-};
+    
+    db = getFirestore(app);
+    auth = getAuth(app);
+    
+} catch (error) {
+    console.error("❌ Erro CRÍTICO ao inicializar Firebase:", error);
+    // Em caso de erro, db e auth permanecem null e o app entra em modo Offline/Local
+}
 
 /**
  * Retorna a instância do banco de dados se estiver conectada.
@@ -55,20 +46,13 @@ export const getDb = (): Firestore | null => {
 };
 
 /**
- * Retorna a configuração salva (para preencher o formulário de settings).
+ * Retorna a instância de autenticação se estiver conectada.
  */
-export const getSavedConfig = (): any | null => {
-    const saved = localStorage.getItem(CONFIG_KEY);
-    return saved ? JSON.parse(saved) : null;
+export const getAuthInstance = (): Auth | null => {
+    return auth;
 };
 
-// --- AUTO-INICIALIZAÇÃO ---
-// Tenta conectar automaticamente ao carregar o arquivo se houver config salva
-const saved = localStorage.getItem(CONFIG_KEY);
-if (saved) {
-    try {
-        initializeFirebase(JSON.parse(saved));
-    } catch (e) {
-        console.error("Falha na auto-conexão do Firebase.", e);
-    }
-}
+// Funções mantidas para compatibilidade com o resto do sistema, mas simplificadas
+export const initializeFirebase = (config: any): boolean => !!db;
+export const disconnectFirebase = () => console.warn("Desconexão desabilitada (Config Fixa).");
+export const getSavedConfig = (): any | null => firebaseConfig;

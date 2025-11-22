@@ -1,44 +1,80 @@
 
 export enum UserRole {
-  ADMIN = 'ADMIN', // Marcos (Acesso total)
-  PARTNER = 'PARTNER', // Pedro (Sócio/Campo)
-  MASTER = 'MASTER', // Mestre de Obras
-  CLIENT = 'CLIENT', // Cliente (Visualizar própria obra)
-  VIEWER = 'VIEWER' // Apenas Visualização Geral
+  ADMIN = 'ADMIN',   // Acesso Total (Super Usuário)
+  EDITOR = 'EDITOR', // Pode criar/editar obras, tarefas, financeiro (Gerente/Mestre)
+  VIEWER = 'VIEWER'  // Apenas visualização (Cliente, Fornecedor, Visitante)
 }
 
-export type UserCategory = 'EMPLOYEE' | 'CLIENT' | 'SUPPLIER';
+export enum UserCategory {
+  INTERNAL = 'INTERNAL', // Equipe interna (Engenheiros, Mestres, Sócios)
+  CLIENT = 'CLIENT',     // Dono da obra
+  SUPPLIER = 'SUPPLIER'  // Fornecedor de materiais
+}
+
+// Mapeamento Estático de Permissões (Hardcoded para segurança e simplicidade)
+export const ROLE_PERMISSIONS = {
+  [UserRole.ADMIN]: {
+    viewDashboard: true,
+    viewWorks: true,
+    manageWorks: true,
+    viewFinance: true,
+    manageFinance: true,
+    viewGlobalTasks: true,
+    viewMaterials: true,
+    manageMaterials: true,
+    manageUsers: true,
+    isSystemAdmin: true
+  },
+  [UserRole.EDITOR]: {
+    viewDashboard: true,
+    viewWorks: true,
+    manageWorks: true,
+    viewFinance: true,
+    manageFinance: true,
+    viewGlobalTasks: true,
+    viewMaterials: true,
+    manageMaterials: true,
+    manageUsers: false, // Editor não gerencia usuários
+    isSystemAdmin: false
+  },
+  [UserRole.VIEWER]: {
+    viewDashboard: false, // Visitante vê apenas o que é permitido explicitamente (ex: Cliente vê obra própria)
+    viewWorks: true,
+    manageWorks: false,
+    viewFinance: false, // Por padrão false, lógica de negócio pode liberar financeiro específico
+    manageFinance: false,
+    viewGlobalTasks: false,
+    viewMaterials: false,
+    manageMaterials: false,
+    manageUsers: false,
+    isSystemAdmin: false
+  }
+};
 
 export interface AppPermissions {
   viewDashboard: boolean;
   viewWorks: boolean;
-  manageWorks: boolean; // Create/Edit works
-  viewFinance: boolean; // Global Finance
-  manageFinance: boolean; // Add/Edit records
+  manageWorks: boolean;
+  viewFinance: boolean;
+  manageFinance: boolean;
   viewGlobalTasks: boolean;
-  viewMaterials: boolean; // NEW: View Material Orders
-  manageMaterials: boolean; // NEW: Create/Edit Material Orders
-  manageUsers: boolean; // Access User/Profile Management
-  isSystemAdmin?: boolean; // Bypass all checks
-}
-
-export interface UserProfile {
-  id: string;
-  name: string;
-  description: string;
-  isSystem?: boolean; // If true, cannot be deleted
-  permissions: AppPermissions;
+  viewMaterials: boolean;
+  manageMaterials: boolean;
+  manageUsers: boolean;
+  isSystemAdmin?: boolean;
 }
 
 export interface User {
   id: string;
   name: string;
-  category: UserCategory; // Classification
-  role: UserRole; // System Access Role
-  profileId: string; // Links to UserProfile
-  avatar: string;
   email: string;
-  // New Fields
+  avatar: string;
+  
+  // NEW STRUCTURE
+  category: UserCategory; // QUEM É (Identidade)
+  role: UserRole;         // O QUE FAZ (Permissão)
+  
+  status?: 'ACTIVE' | 'PENDING' | 'BLOCKED';
   cpf?: string;
   address?: string;
   phone?: string;
@@ -56,20 +92,19 @@ export enum WorkStatus {
 export interface ConstructionWork {
   id: string;
   name: string;
-  client: string; // Stored as name for display, but ideally linked to User ID
-  clientId?: string; // Link to User ID
+  client: string; 
+  clientId?: string;
   address: string;
   status: WorkStatus;
-  progress: number; // 0-100
+  progress: number;
   budget: number;
   startDate: string;
   endDate: string;
   imageUrl: string;
   description: string;
-  teamIds?: string[]; // IDs of users assigned to this work
+  teamIds?: string[];
 }
 
-// Enum kept for ID references, but UI will be dynamic
 export enum TaskStatus {
   BACKLOG = 'Backlog',
   PLANNING = 'Planejamento',
@@ -100,13 +135,13 @@ export interface Task {
   workId: string;
   title: string;
   description: string;
-  status: string; // Changed from TaskStatus enum to string to support dynamic statuses
+  status: string;
   priority: TaskPriority;
-  assignedTo?: string; // User ID
+  assignedTo?: string;
   dueDate: string;
-  completedDate?: string; // Date when status became DONE
+  completedDate?: string;
   images: string[];
-  aiAnalysis?: string; // Stores Gemini analysis
+  aiAnalysis?: string;
 }
 
 export enum FinanceType {
@@ -114,7 +149,6 @@ export enum FinanceType {
   INCOME = 'Receber'
 }
 
-// Changed to simple string to allow dynamic creation
 export type FinanceCategory = string;
 
 export interface FinanceCategoryDefinition {
@@ -126,13 +160,13 @@ export interface FinanceCategoryDefinition {
 export interface FinancialRecord {
   id: string;
   workId: string;
-  entityId?: string; // ID of the Supplier or Client associated
+  entityId?: string;
   type: FinanceType;
   description: string;
-  category: string; // Changed from enum to string
+  category: string;
   amount: number;
   dueDate: string;
-  paidDate?: string; // If present, it's paid
+  paidDate?: string;
   status: 'Pendente' | 'Pago' | 'Atrasado';
 }
 
@@ -144,13 +178,10 @@ export interface DailyLog {
   content: string;
   images: string[];
   type: 'Diário' | 'Vistoria' | 'Alerta';
-  // New fields for detailed reporting
   weather?: 'Sol' | 'Nublado' | 'Chuva' | 'Neve';
   relatedTaskId?: string;
-  teamIds?: string[]; // Employees working that day
+  teamIds?: string[];
 }
-
-// --- MATERIAL ORDERS ---
 
 export enum OrderStatus {
   PENDING = 'Solicitado',
@@ -168,31 +199,29 @@ export interface MaterialQuote {
 export interface MaterialOrder {
   id: string;
   workId: string;
-  taskId?: string; // Optional link to a specific task
-  requesterId: string; // User ID who requested
-  supplierId?: string; // Preferred or selected supplier
+  taskId?: string;
+  requesterId: string;
+  supplierId?: string;
   itemName: string;
   quantity: number;
-  unit: string; // e.g., 'kg', 'saco', 'm', 'un'
+  unit: string;
   status: OrderStatus;
   priority: TaskPriority;
   requestDate: string;
   purchaseDate?: string;
   deliveryDate?: string;
-  estimatedCost?: number; // For quoting
-  finalCost?: number; // Actual cost when purchased
+  estimatedCost?: number;
+  finalCost?: number;
   notes?: string;
-  // Quotation Logic
   quotes?: MaterialQuote[];
   selectedQuoteId?: string;
 }
 
-// --- CATALOG ---
 export interface Material {
   id: string;
   name: string;
-  category: string; // e.g., 'Alvenaria', 'Elétrica'
-  unit: string; // Default unit
+  category: string;
+  unit: string;
   brand?: string;
   priceEstimate?: number;
   description?: string;

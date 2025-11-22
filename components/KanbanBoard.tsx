@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Task, TaskStatusDefinition, TaskPriority, User, TaskStatus } from '../types';
 import { AlertCircle, BrainCircuit, Plus } from 'lucide-react';
@@ -73,17 +72,22 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
     setIsAnalyzing(false);
   };
 
+  const isClient = currentUser.category === 'CLIENT';
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex justify-between items-center mb-4 px-2">
         <h2 className="text-xl font-bold text-slate-800 hidden md:block">Quadro de Tarefas</h2>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 bg-pms-600 text-white px-4 py-2 rounded-lg hover:bg-pms-500 transition-colors w-full md:w-auto justify-center shadow-md"
-        >
-          <Plus size={20} />
-          Nova Tarefa
-        </button>
+        {/* Hide button for Clients */}
+        {!isClient && (
+            <button 
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 bg-pms-600 text-white px-4 py-2 rounded-lg hover:bg-pms-500 transition-colors w-full md:w-auto justify-center shadow-md"
+            >
+            <Plus size={20} />
+            Nova Tarefa
+            </button>
+        )}
       </div>
 
       {/* Horizontal Scrollable Kanban */}
@@ -138,11 +142,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
                             )}
                          </div>
                          
-                         {/* Simple Mobile Friendly Status Mover */}
+                         {/* Simple Mobile Friendly Status Mover - Disabled for Clients */}
                          <select 
                             value={task.status}
                             onChange={(e) => handleStatusChange(task, e.target.value)}
-                            className="text-xs bg-slate-50 border border-slate-200 rounded px-1 py-1 max-w-[120px] truncate focus:outline-none focus:ring-1 focus:ring-pms-500"
+                            disabled={isClient}
+                            className={`text-xs border rounded px-1 py-1 max-w-[120px] truncate focus:outline-none focus:ring-1 focus:ring-pms-500 ${isClient ? 'bg-slate-100 text-slate-400 border-slate-100 appearance-none' : 'bg-slate-50 border-slate-200'}`}
                          >
                             {taskStatuses.map(s => (
                                 <option key={s.id} value={s.id}>{s.label}</option>
@@ -159,7 +164,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
       </div>
 
       {/* Create Task Modal */}
-      {isModalOpen && (
+      {isModalOpen && !isClient && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl">
             <h3 className="text-lg font-bold mb-4">Nova Tarefa</h3>

@@ -1,5 +1,5 @@
 
-import { ConstructionWork, User, UserRole, WorkStatus, Task, TaskStatus, TaskPriority, FinancialRecord, FinanceType, DailyLog, UserProfile, MaterialOrder, OrderStatus, TaskStatusDefinition, Material, FinanceCategoryDefinition } from './types';
+import { ConstructionWork, User, Task, TaskStatus, FinancialRecord, DailyLog, MaterialOrder, TaskStatusDefinition, Material, FinanceCategoryDefinition } from './types';
 
 // Helper to get a date string relative to today
 const getFutureDate = (days: number) => {
@@ -8,7 +8,7 @@ const getFutureDate = (days: number) => {
   return date.toISOString().split('T')[0];
 };
 
-// --- STATUS DEFINITIONS (Mantidos pois são estrutura do sistema) ---
+// --- STATUS DEFINITIONS ---
 export const DEFAULT_TASK_STATUSES: TaskStatusDefinition[] = [
   { id: TaskStatus.BACKLOG, label: 'Backlog', colorScheme: 'gray', order: 0 },
   { id: TaskStatus.PLANNING, label: 'Planejamento', colorScheme: 'blue', order: 1 },
@@ -25,102 +25,33 @@ export const DEFAULT_FINANCE_CATEGORIES: FinanceCategoryDefinition[] = [
   { id: 'cat_tax', name: 'Imposto', type: 'EXPENSE' },
   { id: 'cat_log', name: 'Logística/Frete', type: 'EXPENSE' },
   { id: 'cat_serv', name: 'Serviços Terceiros', type: 'EXPENSE' },
+  { id: 'cat_admin', name: 'Administrativo', type: 'EXPENSE' },
+  { id: 'cat_alim', name: 'Alimentação', type: 'EXPENSE' },
   { id: 'cat_proj', name: 'Projetos', type: 'BOTH' },
   { id: 'cat_other', name: 'Outros', type: 'BOTH' }
 ];
 
-// --- PROFILES (Mantidos pois são estrutura do sistema) ---
-export const MOCK_PROFILES: UserProfile[] = [
-  {
-    id: 'p_admin',
-    name: 'Administrador',
-    description: 'Acesso total ao sistema',
-    isSystem: true,
-    permissions: {
-      viewDashboard: true,
-      viewWorks: true,
-      manageWorks: true,
-      viewFinance: true,
-      manageFinance: true,
-      viewGlobalTasks: true,
-      viewMaterials: true,
-      manageMaterials: true,
-      manageUsers: true,
-      isSystemAdmin: true
-    }
-  },
-  {
-    id: 'p_partner',
-    name: 'Sócio / Gerente',
-    description: 'Gestão de obras e financeiro',
-    isSystem: false,
-    permissions: {
-      viewDashboard: true,
-      viewWorks: true,
-      manageWorks: true,
-      viewFinance: true,
-      manageFinance: true,
-      viewGlobalTasks: true,
-      viewMaterials: true,
-      manageMaterials: true,
-      manageUsers: false,
-      isSystemAdmin: false
-    }
-  },
-  {
-    id: 'p_master',
-    name: 'Mestre de Obras',
-    description: 'Foco em tarefas e diário de obra',
-    isSystem: false,
-    permissions: {
-      viewDashboard: true,
-      viewWorks: true,
-      manageWorks: false,
-      viewFinance: false,
-      manageFinance: false,
-      viewGlobalTasks: true,
-      viewMaterials: true,
-      manageMaterials: true, // Can request materials
-      manageUsers: false,
-      isSystemAdmin: false
-    }
-  },
-  {
-    id: 'p_client',
-    name: 'Cliente (Visualização)',
-    description: 'Acesso restrito para acompanhamento',
-    isSystem: false,
-    permissions: {
-      viewDashboard: false,
-      viewWorks: true,
-      manageWorks: false,
-      viewFinance: false,
-      manageFinance: false,
-      viewGlobalTasks: false,
-      viewMaterials: false,
-      manageMaterials: false,
-      manageUsers: false,
-      isSystemAdmin: false
-    }
-  },
-  {
-    id: 'p_supplier',
-    name: 'Fornecedor',
-    description: 'Apenas cadastro, sem acesso ao sistema',
-    isSystem: false,
-    permissions: {
-      viewDashboard: false,
-      viewWorks: false,
-      manageWorks: false,
-      viewFinance: false,
-      manageFinance: false,
-      viewGlobalTasks: false,
-      viewMaterials: false,
-      manageMaterials: false,
-      manageUsers: false,
-      isSystemAdmin: false
-    }
-  }
+// --- MATERIAL CATALOG SEED ---
+export const DEFAULT_MATERIALS: Material[] = [
+    { id: 'mat_cim_cp2', name: 'Cimento CP II - 50kg', category: 'Alvenaria', unit: 'saco', priceEstimate: 35.00 },
+    { id: 'mat_areia_med', name: 'Areia Média Lavada', category: 'Alvenaria', unit: 'm³', priceEstimate: 120.00 },
+    { id: 'mat_areia_fina', name: 'Areia Fina', category: 'Acabamento', unit: 'm³', priceEstimate: 130.00 },
+    { id: 'mat_pedra_1', name: 'Pedra Brita 1', category: 'Concreto', unit: 'm³', priceEstimate: 110.00 },
+    { id: 'mat_tijolo_8', name: 'Tijolo Baiano 8 Furos', category: 'Alvenaria', unit: 'milheiro', priceEstimate: 800.00 },
+    { id: 'mat_bloco_con', name: 'Bloco de Concreto 14x19x39', category: 'Alvenaria', unit: 'milheiro', priceEstimate: 2500.00 },
+    { id: 'mat_aco_5mm', name: 'Vergalhão CA-60 5.0mm', category: 'Estrutural', unit: 'barra', priceEstimate: 25.00 },
+    { id: 'mat_aco_10mm', name: 'Vergalhão CA-50 10.0mm (3/8)', category: 'Estrutural', unit: 'barra', priceEstimate: 55.00 },
+    { id: 'mat_cal', name: 'Cal Hidratada 20kg', category: 'Alvenaria', unit: 'saco', priceEstimate: 18.00 },
+    { id: 'mat_arga_ac1', name: 'Argamassa AC-I', category: 'Acabamento', unit: 'saco', priceEstimate: 15.00 },
+    { id: 'mat_arga_ac2', name: 'Argamassa AC-II', category: 'Acabamento', unit: 'saco', priceEstimate: 28.00 },
+    { id: 'mat_arga_ac3', name: 'Argamassa AC-III', category: 'Acabamento', unit: 'saco', priceEstimate: 45.00 },
+    { id: 'mat_tinta_ext', name: 'Tinta Acrílica Fosca - 18L', category: 'Pintura', unit: 'lata', priceEstimate: 350.00 },
+    { id: 'mat_massa_corr', name: 'Massa Corrida PVA - 25kg', category: 'Pintura', unit: 'lata', priceEstimate: 60.00 },
+    { id: 'mat_tubo_100', name: 'Tubo PVC Esgoto 100mm', category: 'Hidráulica', unit: 'barra', priceEstimate: 85.00 },
+    { id: 'mat_tubo_25', name: 'Tubo PVC Soldável 25mm', category: 'Hidráulica', unit: 'barra', priceEstimate: 18.00 },
+    { id: 'mat_fio_2_5', name: 'Cabo Flexível 2.5mm', category: 'Elétrica', unit: 'rolo', priceEstimate: 220.00 },
+    { id: 'mat_disj_20', name: 'Disjuntor Unipolar 20A', category: 'Elétrica', unit: 'un', priceEstimate: 15.00 },
+    { id: 'mat_telha_fib', name: 'Telha Fibrocimento 2.44m x 1.10m 6mm', category: 'Cobertura', unit: 'un', priceEstimate: 65.00 }
 ];
 
 // --- ARRAYS VAZIOS (Sistema Zerado) ---

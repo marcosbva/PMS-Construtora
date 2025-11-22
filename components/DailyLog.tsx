@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { DailyLog, User, Task } from '../types';
 import { Camera, Calendar, User as UserIcon, Sun, Cloud, CloudRain, CloudSnow, Briefcase, CheckCircle2, X, AlertTriangle, FileText, Upload, Link as LinkIcon, Image as ImageIcon, Trash2, Plus } from 'lucide-react';
@@ -110,13 +109,16 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
     <div className="max-w-3xl mx-auto pb-20">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-slate-800">Diário de Obra</h2>
-        <button 
-            onClick={handleOpenModal}
-            className="bg-pms-orange hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all"
-        >
-            <Camera size={18} />
-            Novo Registro
-        </button>
+        {/* Hide button for Clients */}
+        {currentUser.category !== 'CLIENT' && (
+            <button 
+                onClick={handleOpenModal}
+                className="bg-pms-orange hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all"
+            >
+                <Camera size={18} />
+                Novo Registro
+            </button>
+        )}
       </div>
 
       <div className="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent">
@@ -142,7 +144,7 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                 <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
                         {author && <img src={author.avatar} alt={author.name} className="w-6 h-6 rounded-full" />}
-                        <span className="text-xs font-bold text-slate-700">{author?.name.split(' ')[0]}</span>
+                        <span className="text-xs font-bold text-slate-700">{author?.name ? author.name.split(' ')[0] : 'Autor Desconhecido'}</span>
                         <span className="text-xs text-slate-400 ml-auto flex items-center gap-1">
                             <Calendar size={10}/> {new Date(log.date).toLocaleDateString('pt-BR')}
                         </span>
@@ -276,7 +278,7 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                                       <div className={`w-4 h-4 rounded border flex items-center justify-center ${selectedTeamIds.includes(u.id) ? 'bg-pms-600 border-pms-600' : 'border-slate-400 bg-white'}`}>
                                           {selectedTeamIds.includes(u.id) && <CheckCircle2 size={12} className="text-white"/>}
                                       </div>
-                                      <span className="text-xs text-slate-700 font-medium">{u.name.split(' ')[0]}</span>
+                                      <span className="text-xs text-slate-700 font-medium">{u.name?.split(' ')[0] || 'N/A'}</span>
                                   </div>
                               ))}
                           </div>

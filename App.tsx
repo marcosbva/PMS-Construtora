@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, Suspense } from 'react';
-import { User, UserRole, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, UserProfile, AppPermissions, MaterialOrder, TaskStatusDefinition, Material, FinanceCategoryDefinition } from './types';
+import React, { useState, useEffect, Suspense, useMemo } from 'react';
+import { User, UserRole, UserCategory, ConstructionWork, Task, FinancialRecord, FinanceType, DailyLog, WorkStatus, AppPermissions, MaterialOrder, TaskStatusDefinition, Material, FinanceCategoryDefinition, ROLE_PERMISSIONS } from './types';
 import { MOCK_USERS } from './constants'; 
-import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, ChevronDown, Landmark, Bell, Users, ListTodo, CheckCircle2, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon, Loader2, Edit, Plus, Package, ExternalLink, ArrowLeft, Archive, Cloud, CloudOff } from 'lucide-react';
+import { LayoutDashboard, HardHat, Wallet, Settings, LogOut, Menu, X, Briefcase, Hammer, ChevronRight, ChevronDown, Landmark, Bell, Users, ListTodo, CheckCircle2, History, PauseCircle, ClipboardList, Truck, Contact, Shield, User as UserIcon, Loader2, Edit, Plus, Package, ExternalLink, ArrowLeft, Archive, Cloud, CloudOff, RefreshCw, Database } from 'lucide-react';
 import { api } from './services/api';
 import { AuthScreen } from './components/AuthScreen';
 
@@ -29,19 +29,20 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   // Global State
+  const [isInitializing, setIsInitializing] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isOnlineMode, setIsOnlineMode] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS[0]); 
+  const [currentUser, setCurrentUser] = useState<User | undefined>(undefined); 
   
   // Navigation State
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'WORKS' | 'HISTORY' | 'FINANCE' | 'REGISTRATIONS' | 'ALL_TASKS' | 'MATERIALS'>('DASHBOARD');
-  const [registrationSubTab, setRegistrationSubTab] = useState<'HUB' | 'EMPLOYEES' | 'CLIENTS' | 'SUPPLIERS' | 'PROFILES' | 'MATERIALS' | 'SETTINGS' | 'FINANCE_CATEGORIES'>('HUB');
+  const [registrationSubTab, setRegistrationSubTab] = useState<'INTERNAL' | 'CLIENTS' | 'SUPPLIERS' | 'MATERIALS' | 'SETTINGS' | 'FINANCE_CATEGORIES'>('INTERNAL');
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   
   // Data State (Fetched from API)
   const [works, setWorks] = useState<ConstructionWork[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [finance, setFinance] = useState<FinancialRecord[]>([]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
@@ -58,45 +59,54 @@ const App: React.FC = () => {
   const [isEditWorkModalOpen, setIsEditWorkModalOpen] = useState(false);
   const [editingWork, setEditingWork] = useState<ConstructionWork | null>(null);
 
-  // --- INITIAL DATA FETCH ---
-  useEffect(() => {
-    const loadData = async () => {
-        setIsLoading(true);
-        // Check mode
-        setIsOnlineMode(api.isOnline());
-        
-        const data = await api.getAllData();
-        
-        setWorks(data.works);
-        setUsers(data.users);
-        setProfiles(data.profiles);
-        setTasks(data.tasks);
-        setFinance(data.finance);
-        setLogs(data.logs);
-        setMaterials(data.materials);
-        setOrders(data.orders);
-        setTaskStatuses(data.taskStatuses);
-        setFinanceCategories(data.financeCategories);
-        
-        setIsLoading(false);
-    };
-    
-    // Mesmo se não autenticado, carregamos perfis e usuários para o login funcionar
-    // Se o usuário já estiver "logado" via persistência (future feature), setAuthenticated aqui
-    loadData();
-  }, []);
+  // Centralized Data Fetching
+  const fetchData = async () => {
+      setIsSyncing(true);
+      const online = api.isOnline();
+      setIsOnlineMode(online);
+      
+      if (online) {
+          await api.checkAndSeedInitialData();
+      }
 
+      const data = await api.getAllData();
+      
+      setWorks(data.works);
+      setUsers(data.users);
+      setTasks(data.tasks);
+      setFinance(data.finance);
+      setLogs(data.logs);
+      setMaterials(data.materials);
+      setOrders(data.orders);
+      setTaskStatuses(data.taskStatuses);
+      setFinanceCategories(data.financeCategories);
+      
+      setIsSyncing(false);
+      setIsLoading(false);
+  };
+
+  useEffect(() => {
+    const initSystem = async () => {
+        setIsInitializing(true);
+        await fetchData();
+        setIsInitializing(false);
+    };
+    initSystem();
+  }, []);
 
   const handleLogin = (user: User) => {
       setCurrentUser(user);
       setIsAuthenticated(true);
+      fetchData();
   };
 
   const handleRegister = async (user: User) => {
       await api.createUser(user);
-      setCurrentUser(user);
-      setUsers(prev => [...prev, user]);
-      setIsAuthenticated(true);
+      await fetchData();
+      if (user.status === 'ACTIVE') {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+      }
   };
 
   const handleLogout = () => {
@@ -105,47 +115,97 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
   };
 
-  // --- Computed Data: Visibility ---
-  const visibleWorks = works.filter(w => {
-      if (!currentUser) return false;
-      if (currentUser.role === UserRole.CLIENT || currentUser.category === 'CLIENT') {
-          return w.clientId === currentUser.id;
-      }
-      return true;
-  });
+  // --- PERMISSION LOGIC (Refactored) ---
+  
+  // Helper to determine if user is just a Client category (Identity)
+  const isClientIdentity = currentUser?.category === UserCategory.CLIENT;
 
-  const selectedWork = visibleWorks.find(w => w.id === selectedWorkId);
-  const activeTasks = tasks.filter(t => t.workId === selectedWorkId);
-  const activeFinance = finance.filter(f => f.workId === selectedWorkId);
-  const activeLogs = logs.filter(l => l.workId === selectedWorkId);
-
-  // Check permission helper
+  // Core permission checker based on ROLE
   const hasPermission = (permissionKey: keyof AppPermissions): boolean => {
       if (!currentUser) return false;
-      const profile = profiles.find(p => p.id === currentUser.profileId);
-      if (!profile) return false; 
-      if (profile.permissions.isSystemAdmin) return true;
-      return !!profile.permissions[permissionKey];
+
+      // Regra Hardcoded: Categoria CLIENTE nunca tem permissões de gestão,
+      // mesmo que por erro o Role seja ADMIN.
+      if (currentUser.category === UserCategory.CLIENT) {
+         if (permissionKey.startsWith('manage') || permissionKey === 'isSystemAdmin') {
+             return false;
+         }
+      }
+
+      // Look up permissions in static map based on Role
+      const permissions = ROLE_PERMISSIONS[currentUser.role] || ROLE_PERMISSIONS[UserRole.VIEWER];
+      
+      if (permissions.isSystemAdmin) return true;
+      return !!permissions[permissionKey];
   };
 
-  // --- Financial Alerts Logic ---
-  const financialAlerts = finance.filter(record => {
+  // --- DATA SCOPING (Isolation) ---
+
+  const visibleWorks = useMemo(() => {
+      return works.filter(w => {
+          if (!currentUser) return false;
+          // If Client Identity, strictly show only assigned works
+          if (isClientIdentity) {
+              return w.clientId === currentUser.id;
+          }
+          return true; // Internal/Suppliers see all (permissions control editing)
+      });
+  }, [works, currentUser, isClientIdentity]);
+
+  const visibleTasks = useMemo(() => {
+      if (isClientIdentity) {
+          return tasks.filter(t => visibleWorks.some(w => w.id === t.workId));
+      }
+      return tasks;
+  }, [tasks, visibleWorks, isClientIdentity]);
+
+  const visibleFinance = useMemo(() => {
+      if (isClientIdentity) {
+           return finance.filter(f => visibleWorks.some(w => w.id === f.workId));
+      }
+      return finance;
+  }, [finance, visibleWorks, isClientIdentity]);
+
+  const visibleLogs = useMemo(() => {
+      if (isClientIdentity) {
+          return logs.filter(l => visibleWorks.some(w => w.id === l.workId));
+      }
+      return logs;
+  }, [logs, visibleWorks, isClientIdentity]);
+
+  const visibleOrders = useMemo(() => {
+      if (isClientIdentity) {
+          return orders.filter(o => visibleWorks.some(w => w.id === o.workId));
+      }
+      return orders;
+  }, [orders, visibleWorks, isClientIdentity]);
+
+  const selectedWork = visibleWorks.find(w => w.id === selectedWorkId);
+  
+  const activeTasks = visibleTasks.filter(t => t.workId === selectedWorkId);
+  const activeFinance = visibleFinance.filter(f => f.workId === selectedWorkId);
+  const activeLogs = visibleLogs.filter(l => l.workId === selectedWorkId);
+
+  // --- FINANCIAL ALERTS ---
+  const financialAlerts = visibleFinance.filter(record => {
     if (!hasPermission('viewFinance')) return false;
     if (record.status !== 'Pendente') return false;
+    if (!record.dueDate) return false;
     const isVisibleWork = visibleWorks.some(w => w.id === record.workId);
     if (!isVisibleWork) return false;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const [y, m, d] = record.dueDate.split('-').map(Number);
-    const dueDate = new Date(y, m - 1, d);
-    const diffTime = dueDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    try {
+        const [y, m, d] = record.dueDate.split('-').map(Number);
+        const dueDate = new Date(y, m - 1, d);
+        const diffTime = dueDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays <= 2;
+    } catch (e) { return false; }
+  }).sort((a,b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
 
-    return diffDays <= 2;
-  }).sort((a,b) => a.dueDate.localeCompare(b.dueDate));
-
-  // --- Handlers (Updated to use API) ---
+  // --- Handlers ---
 
   const handleUpdateWork = async (updatedWork: ConstructionWork) => {
       if (!hasPermission('manageWorks')) return;
@@ -168,7 +228,6 @@ const App: React.FC = () => {
     setLogs(prev => [newLog, ...prev]);
   };
 
-  // Finance Handlers
   const handleAddFinanceRecord = async (record: FinancialRecord) => {
     if (!hasPermission('manageFinance')) { alert('Sem permissão'); return; }
     await api.createFinance(record);
@@ -189,17 +248,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleQuickPay = async (record: FinancialRecord) => {
-      if (!hasPermission('manageFinance')) return;
-      const updatedRecord: FinancialRecord = {
-          ...record,
-          status: 'Pago',
-          paidDate: new Date().toISOString().split('T')[0]
-      };
-      await handleUpdateFinanceRecord(updatedRecord);
-  };
-
-  // Finance Category Handlers
   const handleAddCategory = async (newCat: FinanceCategoryDefinition) => {
     await api.createCategory(newCat);
     setFinanceCategories(prev => [...prev, newCat]);
@@ -217,7 +265,6 @@ const App: React.FC = () => {
     }
   };
 
-  // User Management Handlers
   const handleAddUser = async (newUser: User) => {
     await api.createUser(newUser);
     setUsers(prev => [...prev, newUser]);
@@ -226,7 +273,7 @@ const App: React.FC = () => {
   const handleUpdateUser = async (updatedUser: User) => {
     await api.updateUser(updatedUser);
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-    if (currentUser.id === updatedUser.id) setCurrentUser(updatedUser);
+    if (currentUser && currentUser.id === updatedUser.id) setCurrentUser(updatedUser);
   };
 
   const handleDeleteUser = async (userId: string) => {
@@ -236,30 +283,11 @@ const App: React.FC = () => {
     }
   };
 
-  // Profile Management Handlers
-  const handleAddProfile = async (newProfile: UserProfile) => {
-      await api.createProfile(newProfile);
-      setProfiles(prev => [...prev, newProfile]);
-  };
-
-  const handleUpdateProfile = async (updatedProfile: UserProfile) => {
-      await api.updateProfile(updatedProfile);
-      setProfiles(prev => prev.map(p => p.id === updatedProfile.id ? updatedProfile : p));
-  };
-
-  const handleDeleteProfile = async (profileId: string) => {
-      if(window.confirm('Tem certeza? Usuários com este perfil precisarão ser realocados.')) {
-          await api.deleteProfile(profileId);
-          setProfiles(prev => prev.filter(p => p.id !== profileId));
-      }
-  };
-
   const handleUpdateStatuses = async (newStatuses: TaskStatusDefinition[]) => {
     await api.updateStatuses(newStatuses); 
     setTaskStatuses(newStatuses);
   };
 
-  // Material Catalog Handlers
   const handleAddMaterial = async (newMaterial: Material) => {
       await api.createMaterial(newMaterial);
       setMaterials(prev => [...prev, newMaterial]);
@@ -277,7 +305,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Material Order Handlers
   const handleAddOrder = async (newOrder: MaterialOrder) => {
     if (!hasPermission('manageMaterials')) { alert("Sem permissão."); return; }
     await api.createOrder(newOrder);
@@ -290,19 +317,16 @@ const App: React.FC = () => {
     setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
   };
 
-  // --- Work Edit / Create Handlers ---
   const openEditWorkModal = () => {
       if (selectedWork && hasPermission('manageWorks')) {
-          setEditingWork({
-              ...selectedWork,
-              teamIds: selectedWork.teamIds || []
-          });
+          setEditingWork({ ...selectedWork, teamIds: selectedWork.teamIds || [] });
           setIsEditWorkModalOpen(true);
       }
   };
 
   const handleOpenCreateWorkModal = () => {
     if (!hasPermission('manageWorks')) { alert("Sem permissão."); return; }
+    if (!currentUser) return;
     setEditingWork({
         id: '',
         name: '',
@@ -341,17 +365,10 @@ const App: React.FC = () => {
   const toggleTeamMember = (userId: string) => {
       if (!editingWork) return;
       const currentTeam = editingWork.teamIds || [];
-      
       if (currentTeam.includes(userId)) {
-          setEditingWork({
-              ...editingWork,
-              teamIds: currentTeam.filter(id => id !== userId)
-          });
+          setEditingWork({ ...editingWork, teamIds: currentTeam.filter(id => id !== userId) });
       } else {
-          setEditingWork({
-              ...editingWork,
-              teamIds: [...currentTeam, userId]
-          });
+          setEditingWork({ ...editingWork, teamIds: [...currentTeam, userId] });
       }
   };
 
@@ -361,9 +378,8 @@ const App: React.FC = () => {
       setWorkTab('KANBAN');
   };
 
-  // --- Views ---
-
   const renderDashboard = () => {
+    if (!currentUser) return null;
     const activeWorksList = visibleWorks.filter(w => w.status !== WorkStatus.COMPLETED);
     
     const workStats = {
@@ -375,11 +391,15 @@ const App: React.FC = () => {
 
     return (
       <div className="p-6 space-y-6 animate-fade-in pb-20">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-800">Bem-vindo, {currentUser.name.split(' ')[0]}</h1>
-          <div className="flex items-center gap-2 text-slate-500">
-             <p>Visão geral das operações da PMS Construtora.</p>
-             {isOnlineMode && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded border border-green-200 font-bold flex items-center gap-1"><Cloud size={10}/> Online</span>}
+        <div className="mb-6 flex justify-between items-end">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">
+                Bem-vindo, {currentUser?.name ? currentUser.name.split(' ')[0] : 'Usuário'}
+            </h1>
+            <div className="flex items-center gap-2 text-slate-500">
+               <p>Visão geral das operações da PMS Construtora.</p>
+               {isOnlineMode && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded border border-green-200 font-bold flex items-center gap-1"><Cloud size={10}/> Online</span>}
+            </div>
           </div>
         </div>
 
@@ -429,7 +449,6 @@ const App: React.FC = () => {
                 <div className="p-2 bg-slate-100 text-slate-500 rounded-lg group-hover:scale-110 transition-transform group-hover:bg-pms-50 group-hover:text-pms-600">
                     <CheckCircle2 size={20} />
                 </div>
-                <ExternalLink size={12} className="absolute top-2 right-2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
         </div>
 
@@ -444,6 +463,8 @@ const App: React.FC = () => {
                    {financialAlerts.map(alert => {
                        const isIncome = alert.type === FinanceType.INCOME;
                        const workName = works.find(w => w.id === alert.workId)?.name || 'Obra Desconhecida';
+                       const dateLabel = alert.dueDate ? new Date(alert.dueDate).toLocaleDateString('pt-BR') : 'Data Inválida';
+
                        return (
                         <div key={alert.id} className="bg-white/80 p-3 rounded-lg border border-orange-100 flex flex-col md:flex-row md:items-center justify-between gap-2">
                            <div>
@@ -460,7 +481,7 @@ const App: React.FC = () => {
                                   R$ {alert.amount.toLocaleString('pt-BR')}
                                </span>
                                <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded">
-                                  {new Date(alert.dueDate).toLocaleDateString('pt-BR')}
+                                  {dateLabel}
                                </span>
                            </div>
                         </div>
@@ -513,7 +534,6 @@ const App: React.FC = () => {
                 <div className="p-4 flex-1 flex flex-col justify-between">
                   <div>
                       <p className="text-slate-500 text-xs mb-3 line-clamp-2 h-8">{work.address}</p>
-                      
                       <div className="space-y-2">
                         <div className="flex justify-between text-xs font-bold text-slate-700">
                           <span>Progresso</span>
@@ -527,44 +547,29 @@ const App: React.FC = () => {
                         </div>
                       </div>
                   </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                      <div className="flex -space-x-2">
-                          {(work.teamIds || []).slice(0, 3).map(uid => {
-                              const u = users.find(user => user.id === uid);
-                              if (!u) return null;
-                              return (
-                                  <img key={uid} src={u.avatar} className="w-6 h-6 rounded-full border-2 border-white" title={u.name} />
-                              )
-                          })}
-                          {(work.teamIds?.length || 0) > 3 && (
-                              <div className="w-6 h-6 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                                  +{work.teamIds!.length - 3}
-                              </div>
-                          )}
-                      </div>
-                      <div className="text-pms-600 text-xs font-bold flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                          Acessar Painel <ChevronRight size={14} />
-                      </div>
-                  </div>
                 </div>
               </div>
             ))}
-            {activeWorksList.length === 0 && (
-                <div className="col-span-full bg-slate-50 border border-slate-200 rounded-xl p-10 text-center text-slate-400">
-                    <Briefcase size={48} className="mx-auto mb-4 opacity-20" />
-                    <p>Nenhuma obra ativa encontrada.</p>
-                    {hasPermission('manageWorks') && <p className="text-sm mt-2">Clique em "Nova Obra" para começar.</p>}
-                </div>
-            )}
           </div>
         </div>
       </div>
     );
   };
 
-  // --- Main Render ---
-  if (!isAuthenticated) {
+  // --- BOOTSTRAP SCREEN ---
+  if (isInitializing) {
+      return (
+          <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+              <div className="flex flex-col items-center animate-pulse">
+                  <Database size={48} className="mb-4 text-pms-400" />
+                  <h2 className="text-xl font-bold">Inicializando Sistema...</h2>
+                  <p className="text-slate-400 text-sm mt-2">Verificando integridade do banco de dados.</p>
+              </div>
+          </div>
+      )
+  }
+
+  if (!isAuthenticated || !currentUser) {
       return isLoading ? (
           <div className="min-h-screen flex items-center justify-center bg-slate-900">
               <Loader2 className="text-pms-500 animate-spin" size={48} />
@@ -596,22 +601,44 @@ const App: React.FC = () => {
         <nav className="flex-1 px-4 space-y-2 py-4 overflow-y-auto custom-scroll">
             <div className="text-xs font-bold text-slate-500 uppercase px-4 mb-2 mt-2">Geral</div>
             <SidebarItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activeTab === 'DASHBOARD'} onClick={() => { setActiveTab('DASHBOARD'); setSelectedWorkId(null); }} />
-            <SidebarItem icon={<ListTodo size={20} />} label="Tarefas Globais" active={activeTab === 'ALL_TASKS'} onClick={() => { setActiveTab('ALL_TASKS'); setSelectedWorkId(null); }} />
-            <SidebarItem icon={<Briefcase size={20} />} label="Histórico de Obras" active={activeTab === 'HISTORY'} onClick={() => { setActiveTab('HISTORY'); setSelectedWorkId(null); }} />
+            
+            {hasPermission('viewGlobalTasks') && (
+                <SidebarItem icon={<ListTodo size={20} />} label="Tarefas Globais" active={activeTab === 'ALL_TASKS'} onClick={() => { setActiveTab('ALL_TASKS'); setSelectedWorkId(null); }} />
+            )}
+            {hasPermission('viewWorks') && (
+                <SidebarItem icon={<Briefcase size={20} />} label="Histórico de Obras" active={activeTab === 'HISTORY'} onClick={() => { setActiveTab('HISTORY'); setSelectedWorkId(null); }} />
+            )}
 
-            <div className="text-xs font-bold text-slate-500 uppercase px-4 mb-2 mt-6">Gestão</div>
-            <SidebarItem icon={<Users size={20} />} label="Cadastros & Equipe" active={activeTab === 'REGISTRATIONS'} onClick={() => { setActiveTab('REGISTRATIONS'); setSelectedWorkId(null); }} />
-            <SidebarItem icon={<Package size={20} />} label="Materiais & Compras" active={activeTab === 'MATERIALS'} onClick={() => { setActiveTab('MATERIALS'); setSelectedWorkId(null); }} />
-            <SidebarItem icon={<Landmark size={20} />} label="Financeiro Global" active={activeTab === 'FINANCE'} onClick={() => { setActiveTab('FINANCE'); setSelectedWorkId(null); }} />
-            <SidebarItem icon={<Settings size={20} />} label="Configurações" active={activeTab === 'REGISTRATIONS' && registrationSubTab === 'SETTINGS'} onClick={() => { setActiveTab('REGISTRATIONS'); setRegistrationSubTab('SETTINGS'); setSelectedWorkId(null); }} />
+            {(hasPermission('manageUsers') || hasPermission('manageFinance') || hasPermission('viewMaterials')) && (
+                <div className="text-xs font-bold text-slate-500 uppercase px-4 mb-2 mt-6">Gestão</div>
+            )}
+            
+            {hasPermission('manageUsers') && (
+                <SidebarItem icon={<Users size={20} />} label="Cadastros & Equipe" active={activeTab === 'REGISTRATIONS'} onClick={() => { setActiveTab('REGISTRATIONS'); setRegistrationSubTab('INTERNAL'); setSelectedWorkId(null); }} />
+            )}
+            
+            {hasPermission('viewMaterials') && (
+                <SidebarItem icon={<Package size={20} />} label="Materiais & Compras" active={activeTab === 'MATERIALS'} onClick={() => { setActiveTab('MATERIALS'); setSelectedWorkId(null); }} />
+            )}
+            
+            {hasPermission('viewFinance') && (
+                <SidebarItem icon={<Landmark size={20} />} label="Financeiro Global" active={activeTab === 'FINANCE'} onClick={() => { setActiveTab('FINANCE'); setSelectedWorkId(null); }} />
+            )}
+            
+            {hasPermission('manageUsers') && (
+                <SidebarItem icon={<Settings size={20} />} label="Configurações" active={activeTab === 'REGISTRATIONS' && registrationSubTab === 'SETTINGS'} onClick={() => { setActiveTab('REGISTRATIONS'); setRegistrationSubTab('SETTINGS'); setSelectedWorkId(null); }} />
+            )}
         </nav>
 
         <div className="p-4 border-t border-slate-800">
            <div className="flex items-center gap-3 mb-4">
                <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-slate-700" alt="Profile" />
                <div className="overflow-hidden">
-                   <p className="text-sm font-bold text-white truncate">{currentUser.name}</p>
-                   <p className="text-xs text-slate-500 truncate">{profiles.find(p=>p.id===currentUser.profileId)?.name}</p>
+                   <p className="text-sm font-bold text-white truncate">{currentUser.name || 'Usuário'}</p>
+                   <div className="flex gap-1 text-xs">
+                        <span className="bg-slate-800 text-slate-300 px-1 rounded">{currentUser.category}</span>
+                        <span className="bg-pms-900 text-pms-300 px-1 rounded">{currentUser.role}</span>
+                   </div>
                </div>
            </div>
            <button 
@@ -641,11 +668,26 @@ const App: React.FC = () => {
           <div className="fixed inset-0 bg-slate-900 z-40 pt-20 px-6 pb-6 md:hidden flex flex-col animate-in slide-in-from-top-10">
               <nav className="space-y-4 flex-1">
                   <SidebarItem icon={<LayoutDashboard size={24} />} label="Dashboard" active={activeTab === 'DASHBOARD'} onClick={() => { setActiveTab('DASHBOARD'); setSelectedWorkId(null); setMobileMenuOpen(false); }} />
-                  <SidebarItem icon={<Briefcase size={24} />} label="Obras" active={activeTab === 'WORKS' || activeTab === 'HISTORY'} onClick={() => { setActiveTab('DASHBOARD'); setSelectedWorkId(null); setMobileMenuOpen(false); }} />
-                  <SidebarItem icon={<ListTodo size={24} />} label="Tarefas" active={activeTab === 'ALL_TASKS'} onClick={() => { setActiveTab('ALL_TASKS'); setMobileMenuOpen(false); }} />
-                  <SidebarItem icon={<Users size={24} />} label="Equipe" active={activeTab === 'REGISTRATIONS'} onClick={() => { setActiveTab('REGISTRATIONS'); setMobileMenuOpen(false); }} />
-                  <SidebarItem icon={<Package size={24} />} label="Materiais" active={activeTab === 'MATERIALS'} onClick={() => { setActiveTab('MATERIALS'); setMobileMenuOpen(false); }} />
-                  <SidebarItem icon={<Landmark size={24} />} label="Financeiro" active={activeTab === 'FINANCE'} onClick={() => { setActiveTab('FINANCE'); setMobileMenuOpen(false); }} />
+                  
+                  {hasPermission('viewWorks') && (
+                      <SidebarItem icon={<Briefcase size={24} />} label="Obras" active={activeTab === 'WORKS' || activeTab === 'HISTORY'} onClick={() => { setActiveTab('DASHBOARD'); setSelectedWorkId(null); setMobileMenuOpen(false); }} />
+                  )}
+                  
+                  {hasPermission('viewGlobalTasks') && (
+                      <SidebarItem icon={<ListTodo size={24} />} label="Tarefas" active={activeTab === 'ALL_TASKS'} onClick={() => { setActiveTab('ALL_TASKS'); setMobileMenuOpen(false); }} />
+                  )}
+                  
+                  {hasPermission('manageUsers') && (
+                      <SidebarItem icon={<Users size={24} />} label="Equipe" active={activeTab === 'REGISTRATIONS'} onClick={() => { setActiveTab('REGISTRATIONS'); setMobileMenuOpen(false); }} />
+                  )}
+                  
+                  {hasPermission('viewMaterials') && (
+                      <SidebarItem icon={<Package size={24} />} label="Materiais" active={activeTab === 'MATERIALS'} onClick={() => { setActiveTab('MATERIALS'); setMobileMenuOpen(false); }} />
+                  )}
+                  
+                  {hasPermission('viewFinance') && (
+                      <SidebarItem icon={<Landmark size={24} />} label="Financeiro" active={activeTab === 'FINANCE'} onClick={() => { setActiveTab('FINANCE'); setMobileMenuOpen(false); }} />
+                  )}
               </nav>
               <button onClick={handleLogout} className="flex items-center gap-2 text-red-400 font-bold mt-auto py-4 border-t border-slate-800">
                   <LogOut size={20} /> Sair do Sistema
@@ -672,6 +714,17 @@ const App: React.FC = () => {
                </span>
             </div>
             <div className="flex items-center gap-4">
+                {/* SYNC BUTTON */}
+                <button 
+                   onClick={() => fetchData()}
+                   disabled={isSyncing}
+                   className="flex items-center gap-1 text-xs font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-200 transition-colors disabled:opacity-50"
+                   title="Forçar sincronização com a nuvem"
+                >
+                    <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} /> 
+                    {isSyncing ? 'Sincronizando...' : 'Sincronizar'}
+                </button>
+
                 {isOnlineMode ? (
                     <div title="Conectado à Nuvem" className="text-green-600 bg-green-50 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
                         <Cloud size={14} /> Online
@@ -696,7 +749,6 @@ const App: React.FC = () => {
                 {activeTab === 'HISTORY' && (
                     <div className="p-6">
                         <h2 className="text-2xl font-bold text-slate-800 mb-6">Histórico de Obras Concluídas</h2>
-                        {/* Reusing Dashboard Logic for completed works list could go here, simplified */}
                         <div className="bg-white rounded-xl p-10 text-center text-slate-400 border border-slate-200 border-dashed">
                             <Archive size={48} className="mx-auto mb-4 opacity-20" />
                             <p>Obras concluídas serão arquivadas aqui.</p>
@@ -706,8 +758,8 @@ const App: React.FC = () => {
 
                 {activeTab === 'ALL_TASKS' && (
                     <GlobalTaskList 
-                        tasks={tasks} 
-                        works={works} 
+                        tasks={visibleTasks} 
+                        works={visibleWorks} 
                         users={users} 
                         taskStatuses={taskStatuses}
                         onUpdateTask={handleUpdateTask}
@@ -718,7 +770,7 @@ const App: React.FC = () => {
                 {activeTab === 'FINANCE' && (
                     <div className="p-6">
                         <FinanceView 
-                            records={finance} 
+                            records={visibleFinance}
                             currentUser={currentUser} 
                             users={users} 
                             financeCategories={financeCategories}
@@ -732,8 +784,8 @@ const App: React.FC = () => {
 
                 {activeTab === 'REGISTRATIONS' && (
                     <UserManagement 
+                        currentUser={currentUser}
                         users={users}
-                        profiles={profiles}
                         materials={materials}
                         taskStatuses={taskStatuses}
                         financeCategories={financeCategories}
@@ -741,9 +793,6 @@ const App: React.FC = () => {
                         onAddUser={handleAddUser}
                         onUpdateUser={handleUpdateUser}
                         onDeleteUser={handleDeleteUser}
-                        onAddProfile={handleAddProfile}
-                        onUpdateProfile={handleUpdateProfile}
-                        onDeleteProfile={handleDeleteProfile}
                         onUpdateStatuses={handleUpdateStatuses}
                         onAddMaterial={handleAddMaterial}
                         onUpdateMaterial={handleUpdateMaterial}
@@ -756,9 +805,9 @@ const App: React.FC = () => {
 
                 {activeTab === 'MATERIALS' && (
                     <MaterialOrders 
-                        orders={orders}
-                        works={works}
-                        tasks={tasks}
+                        orders={visibleOrders} 
+                        works={visibleWorks} 
+                        tasks={visibleTasks}
                         users={users}
                         materials={materials}
                         currentUser={currentUser}
@@ -791,8 +840,8 @@ const App: React.FC = () => {
 
                             <div className="flex bg-slate-100 p-1 rounded-lg overflow-x-auto">
                                 <WorkTabButton active={workTab === 'OVERVIEW'} onClick={() => setWorkTab('OVERVIEW')} label="Visão Geral" icon={<LayoutDashboard size={16}/>} />
-                                <WorkTabButton active={workTab === 'KANBAN'} onClick={() => setWorkTab('KANBAN')} label="Tarefas (Kanban)" icon={<ListTodo size={16}/>} />
-                                <WorkTabButton active={workTab === 'FINANCE'} onClick={() => setWorkTab('FINANCE')} label="Financeiro" icon={<Landmark size={16}/>} />
+                                {hasPermission('viewGlobalTasks') && <WorkTabButton active={workTab === 'KANBAN'} onClick={() => setWorkTab('KANBAN')} label="Tarefas (Kanban)" icon={<ListTodo size={16}/>} />}
+                                {hasPermission('viewFinance') && <WorkTabButton active={workTab === 'FINANCE'} onClick={() => setWorkTab('FINANCE')} label="Financeiro" icon={<Landmark size={16}/>} />}
                                 <WorkTabButton active={workTab === 'LOGS'} onClick={() => setWorkTab('LOGS')} label="Diário de Obra" icon={<ClipboardList size={16}/>} />
                             </div>
                             
@@ -851,26 +900,6 @@ const App: React.FC = () => {
                                                     </p>
                                                 </div>
                                             </div>
-
-                                            {/* Recent Activity / Tasks Preview */}
-                                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                                                <div className="flex justify-between items-center mb-4">
-                                                    <h3 className="font-bold text-slate-800">Tarefas Recentes</h3>
-                                                    <button onClick={() => setWorkTab('KANBAN')} className="text-pms-600 text-xs font-bold hover:underline">Ver Todas</button>
-                                                </div>
-                                                <div className="space-y-3">
-                                                    {activeTasks.slice(0, 3).map(t => (
-                                                        <div key={t.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className={`w-2 h-2 rounded-full ${t.status === 'Concluído' ? 'bg-green-500' : 'bg-orange-500'}`}></div>
-                                                                <span className="text-sm font-medium text-slate-700">{t.title}</span>
-                                                            </div>
-                                                            <span className="text-xs text-slate-400">{t.status}</span>
-                                                        </div>
-                                                    ))}
-                                                    {activeTasks.length === 0 && <p className="text-slate-400 text-sm italic">Nenhuma tarefa registrada.</p>}
-                                                </div>
-                                            </div>
                                         </div>
 
                                         <div className="space-y-6">
@@ -886,55 +915,19 @@ const App: React.FC = () => {
                                                                 <img src={user.avatar} className="w-10 h-10 rounded-full" alt={user.name} />
                                                                 <div>
                                                                     <p className="text-sm font-bold text-slate-700">{user.name}</p>
-                                                                    <p className="text-xs text-slate-500">{profiles.find(p => p.id === user.profileId)?.name}</p>
+                                                                    <p className="text-xs text-slate-500">{user.category}</p>
                                                                 </div>
                                                             </div>
                                                         )
                                                     })}
                                                 </div>
-                                                {hasPermission('manageWorks') && (
-                                                    <button 
-                                                        onClick={openEditWorkModal}
-                                                        className="w-full mt-6 py-2 border border-dashed border-slate-300 rounded-lg text-slate-500 text-xs font-bold hover:bg-slate-50 hover:text-pms-600 transition-colors"
-                                                    >
-                                                        + Gerenciar Equipe
-                                                    </button>
-                                                )}
-                                            </div>
-
-                                            {/* Finance Summary Mini */}
-                                            <div className="bg-slate-900 rounded-xl shadow-lg p-6 text-white relative overflow-hidden">
-                                                <div className="absolute top-0 right-0 w-24 h-24 bg-pms-500 rounded-full blur-3xl opacity-20 -mr-10 -mt-10"></div>
-                                                <h3 className="font-bold text-lg mb-1">Resumo Financeiro</h3>
-                                                <p className="text-slate-400 text-xs mb-6">Acumulado da Obra</p>
-                                                
-                                                <div className="space-y-4 relative z-10">
-                                                    <div>
-                                                        <span className="text-xs text-slate-400 uppercase">Total Despesas</span>
-                                                        <p className="text-2xl font-bold text-red-400">
-                                                            R$ {activeFinance.filter(f => f.type === 'Pagar').reduce((acc, curr) => acc + curr.amount, 0).toLocaleString('pt-BR')}
-                                                        </p>
-                                                    </div>
-                                                    <div className="pt-4 border-t border-slate-800">
-                                                        <span className="text-xs text-slate-400 uppercase">Orçamento</span>
-                                                        <p className="text-lg font-medium text-green-400">
-                                                            R$ {selectedWork.budget.toLocaleString('pt-BR')}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <button 
-                                                    onClick={() => setWorkTab('FINANCE')}
-                                                    className="w-full mt-6 bg-white/10 hover:bg-white/20 py-2 rounded-lg text-sm font-bold transition-colors"
-                                                >
-                                                    Ver Detalhes
-                                                </button>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
-                            {workTab === 'KANBAN' && (
+                            {workTab === 'KANBAN' && hasPermission('viewGlobalTasks') && (
                                 <KanbanBoard 
                                     tasks={activeTasks}
                                     users={users}
@@ -946,7 +939,7 @@ const App: React.FC = () => {
                                 />
                             )}
 
-                            {workTab === 'FINANCE' && (
+                            {workTab === 'FINANCE' && hasPermission('viewFinance') && (
                                 <FinanceView 
                                     records={activeFinance}
                                     currentUser={currentUser}
@@ -976,164 +969,6 @@ const App: React.FC = () => {
             </Suspense>
         </div>
       </main>
-
-      {/* Edit Work Modal */}
-      {isEditWorkModalOpen && editingWork && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
-                  <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-2">
-                      <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                          {editingWork.id ? 'Editar Obra' : 'Nova Obra'}
-                      </h3>
-                      <button onClick={() => setIsEditWorkModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                          <X size={24} />
-                      </button>
-                  </div>
-
-                  <div className="overflow-y-auto custom-scroll flex-1 pr-2 space-y-4">
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Obra</label>
-                          <input 
-                            type="text" 
-                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                            value={editingWork.name}
-                            onChange={(e) => setEditingWork({...editingWork, name: e.target.value})}
-                          />
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-sm font-bold text-slate-700 mb-1">Cliente</label>
-                              <select 
-                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none bg-white"
-                                value={editingWork.clientId || ''}
-                                onChange={(e) => {
-                                    const client = users.find(u => u.id === e.target.value);
-                                    setEditingWork({
-                                        ...editingWork, 
-                                        clientId: e.target.value,
-                                        client: client ? client.name : ''
-                                    })
-                                }}
-                              >
-                                  <option value="">Selecione...</option>
-                                  {users.filter(u => u.category === 'CLIENT').map(u => (
-                                      <option key={u.id} value={u.id}>{u.name}</option>
-                                  ))}
-                              </select>
-                          </div>
-                          <div>
-                              <label className="block text-sm font-bold text-slate-700 mb-1">Status</label>
-                              <select 
-                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none bg-white"
-                                value={editingWork.status}
-                                onChange={(e) => setEditingWork({...editingWork, status: e.target.value as WorkStatus})}
-                              >
-                                  {Object.values(WorkStatus).map(s => (
-                                      <option key={s} value={s}>{s}</option>
-                                  ))}
-                              </select>
-                          </div>
-                      </div>
-
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-1">Endereço</label>
-                          <input 
-                            type="text" 
-                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                            value={editingWork.address}
-                            onChange={(e) => setEditingWork({...editingWork, address: e.target.value})}
-                          />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-sm font-bold text-slate-700 mb-1">Orçamento (R$)</label>
-                              <input 
-                                type="number" 
-                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                                value={editingWork.budget}
-                                onChange={(e) => setEditingWork({...editingWork, budget: parseFloat(e.target.value)})}
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-sm font-bold text-slate-700 mb-1">Progresso (%)</label>
-                              <input 
-                                type="number" 
-                                max="100"
-                                min="0"
-                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                                value={editingWork.progress}
-                                onChange={(e) => setEditingWork({...editingWork, progress: parseInt(e.target.value)})}
-                              />
-                          </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-sm font-bold text-slate-700 mb-1">Data Início</label>
-                              <input 
-                                type="date" 
-                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                                value={editingWork.startDate}
-                                onChange={(e) => setEditingWork({...editingWork, startDate: e.target.value})}
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-sm font-bold text-slate-700 mb-1">Data Fim (Prev.)</label>
-                              <input 
-                                type="date" 
-                                className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
-                                value={editingWork.endDate}
-                                onChange={(e) => setEditingWork({...editingWork, endDate: e.target.value})}
-                              />
-                          </div>
-                      </div>
-                      
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-1">Descrição</label>
-                          <textarea 
-                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none h-24 resize-none"
-                            value={editingWork.description}
-                            onChange={(e) => setEditingWork({...editingWork, description: e.target.value})}
-                          />
-                      </div>
-
-                      <div>
-                          <label className="block text-sm font-bold text-slate-700 mb-2">Equipe Alocada</label>
-                          <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 max-h-40 overflow-y-auto">
-                              {users.filter(u => u.category === 'EMPLOYEE').map(u => (
-                                  <div 
-                                    key={u.id} 
-                                    onClick={() => toggleTeamMember(u.id)}
-                                    className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all ${
-                                        (editingWork.teamIds || []).includes(u.id) ? 'bg-pms-100 border border-pms-300' : 'bg-white hover:bg-slate-100 border border-transparent'
-                                    }`}
-                                  >
-                                      <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                                          (editingWork.teamIds || []).includes(u.id) ? 'bg-pms-600 border-pms-600' : 'border-slate-300'
-                                      }`}>
-                                          {(editingWork.teamIds || []).includes(u.id) && <CheckCircle2 size={12} className="text-white" />}
-                                      </div>
-                                      <span className="text-xs font-medium text-slate-700">{u.name}</span>
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-                  </div>
-
-                  <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
-                      <button onClick={() => setIsEditWorkModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">
-                          Cancelar
-                      </button>
-                      <button onClick={saveEditedWork} className="px-6 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 font-bold shadow-lg">
-                          Salvar Obra
-                      </button>
-                  </div>
-              </div>
-          </div>
-      )}
-
     </div>
   );
 };

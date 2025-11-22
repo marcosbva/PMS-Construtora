@@ -41,8 +41,9 @@ export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, us
       // 2. Filters
       const matchesStatus = filterStatus === 'ALL' || task.status === filterStatus;
       const matchesPriority = filterPriority === 'ALL' || task.priority === filterPriority;
-      const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            task.description.toLowerCase().includes(searchTerm.toLowerCase());
+      // PROTEÇÃO CONTRA NULOS NO SEARCH
+      const matchesSearch = (task.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            (task.description || '').toLowerCase().includes(searchTerm.toLowerCase());
       return matchesStatus && matchesPriority && matchesSearch;
     });
   }, [tasks, viewMode, filterStatus, filterPriority, searchTerm]);
@@ -153,7 +154,7 @@ export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, us
             {assignee ? (
               <div className="flex items-center gap-2">
                 <img src={assignee.avatar} className="w-6 h-6 rounded-full" alt={assignee.name} />
-                <span className="text-sm text-slate-600">{assignee.name.split(' ')[0]}</span>
+                <span className="text-sm text-slate-600">{assignee.name ? assignee.name.split(' ')[0] : 'Usuário'}</span>
               </div>
             ) : <span className="text-slate-400">-</span>}
           </td>

@@ -45,18 +45,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  // Permission Check
-  if (currentUser.role === UserRole.MASTER) {
-    return (
-      <div className="flex items-center justify-center h-64 bg-slate-50 rounded-lg border border-slate-200">
-        <div className="text-center text-slate-500">
-          <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-yellow-500" />
-          <p>Acesso restrito. Contate o administrador.</p>
-        </div>
-      </div>
-    );
-  }
-
   // Calculate Totals
   const totals = useMemo(() => {
     const expenses = records.filter(r => r.type === FinanceType.EXPENSE).reduce((acc, curr) => acc + curr.amount, 0);
@@ -108,7 +96,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const openInvoices = useMemo(() => {
       return records
         .filter(r => r.status !== 'Pago')
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+        .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
   }, [records]);
 
   // --- LOGIC: DETAILED FILTERED LIST ---
@@ -125,7 +113,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           filtered = records.filter(r => r.status === 'Pendente' && r.type === FinanceType.EXPENSE);
       }
 
-      return filtered.sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+      return filtered.sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
   }, [records, viewFilter]);
 
 
