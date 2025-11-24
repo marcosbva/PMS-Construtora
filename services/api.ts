@@ -11,6 +11,7 @@ import {
   limit, 
   setDoc,
   getDoc,
+  onSnapshot,
   Firestore
 } from "firebase/firestore";
 import { getDb } from "./firebase";
@@ -29,6 +30,16 @@ const COLLECTIONS = {
 export const api = {
   isOnline: () => !!getDb(),
 
+  // --- USERS ---
+  // Users rarely change, getDocs is fine, but for status updates (block/approve), snapshot is better.
+  subscribeToUsers: (callback: (users: User[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.USERS));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as User));
+      });
+  },
   getUsers: async (): Promise<User[]> => {
       const db = getDb();
       if (!db) return [];
@@ -46,6 +57,15 @@ export const api = {
       await updateDoc(doc(db, COLLECTIONS.USERS, user.id), { ...user });
   },
 
+  // --- WORKS (OBRAS) ---
+  subscribeToWorks: (callback: (works: ConstructionWork[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.WORKS)); // Fetch ALL works to ensure visibility
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as ConstructionWork));
+      });
+  },
   getWorks: async (): Promise<ConstructionWork[]> => {
       const db = getDb();
       if (!db) return [];
@@ -69,7 +89,6 @@ export const api = {
       try {
           console.log(`Iniciando exclusão da obra: ${id}`);
           
-          // 1. Gather all related sub-documents
           const tasksQ = query(collection(db, COLLECTIONS.TASKS), where('workId', '==', id));
           const finQ = query(collection(db, COLLECTIONS.FINANCE), where('workId', '==', id));
           const logsQ = query(collection(db, COLLECTIONS.LOGS), where('workId', '==', id));
@@ -77,7 +96,6 @@ export const api = {
 
           const [tS, fS, lS, oS] = await Promise.all([getDocs(tasksQ), getDocs(finQ), getDocs(logsQ), getDocs(ordersQ)]);
           
-          // 2. Delete Sub-documents first (Best effort)
           const subDeletions = [
               ...tS.docs.map(d => deleteDoc(d.ref)),
               ...fS.docs.map(d => deleteDoc(d.ref)),
@@ -85,10 +103,7 @@ export const api = {
               ...oS.docs.map(d => deleteDoc(d.ref))
           ];
           
-          // Wait for sub-deletions but don't block main deletion on error
           await Promise.allSettled(subDeletions);
-
-          // 3. Delete the Main Work Document
           await deleteDoc(doc(db, COLLECTIONS.WORKS, id));
           
           console.log(`Obra ${id} excluída com sucesso.`);
@@ -98,6 +113,17 @@ export const api = {
       }
   },
 
+  // --- TASKS (TAREFAS) ---
+  // "Mural Rule": Tasks are team property. Subscribe to ALL or filter by work in component.
+  // For Dashboard to work (pending tasks count), we need GLOBAL subscription.
+  subscribeToTasks: (callback: (tasks: Task[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.TASKS)); 
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as Task));
+      });
+  },
   getTasks: async (): Promise<Task[]> => {
       const db = getDb();
       if (!db) return [];
@@ -120,6 +146,16 @@ export const api = {
       await deleteDoc(doc(db, COLLECTIONS.TASKS, id));
   },
 
+  // --- FINANCE (FINANCEIRO) ---
+  // "Mural Rule": Finance is project property. Dashboard needs global balance.
+  subscribeToFinance: (callback: (records: FinancialRecord[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.FINANCE));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as FinancialRecord));
+      });
+  },
   getFinance: async (): Promise<FinancialRecord[]> => {
       const db = getDb();
       if (!db) return [];
@@ -142,6 +178,23 @@ export const api = {
       await deleteDoc(doc(db, COLLECTIONS.FINANCE, id));
   },
 
+  // --- LOGS (DIÁRIO / INTERCORRÊNCIAS) ---
+  // Optimized: Logs are heavy. We subscribe ONLY when entering a Work context (filtered by workId).
+  // NO AUTHOR FILTER.
+  subscribeToWorkLogs: (workId: string, callback: (logs: DailyLog[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      
+      const q = query(
+          collection(db, COLLECTIONS.LOGS), 
+          where('workId', '==', workId),
+          orderBy('date', 'desc')
+      );
+      
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as DailyLog));
+      });
+  },
   getLogs: async (): Promise<DailyLog[]> => {
       const db = getDb();
       if (!db) return [];
@@ -172,6 +225,23 @@ export const api = {
       return snap.docs[0].data() as DailyLog;
   },
 
+  // --- MATERIALS & ORDERS ---
+  subscribeToMaterials: (callback: (mats: Material[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.MATERIALS));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as Material));
+      });
+  },
+  subscribeToOrders: (callback: (orders: MaterialOrder[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.ORDERS));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as MaterialOrder));
+      });
+  },
   getMaterials: async (): Promise<Material[]> => {
       const db = getDb();
       if (!db) return [];

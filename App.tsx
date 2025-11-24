@@ -38,32 +38,66 @@ function App() {
   const [isSavingWork, setIsSavingWork] = useState(false);
   const [isDeletingWork, setIsDeletingWork] = useState(false);
 
-  // Fetch Data on Load
+  // --- REAL-TIME DATA SUBSCRIPTION ---
+  // Replaces the old one-time fetch to ensure "Mural da Obra" visibility (everyone sees everything)
   useEffect(() => {
-      const loadData = async () => {
-          setIsLoading(true);
-          try {
-              if (api.isOnline()) {
-                  const [u, w, t, f, l, m, o] = await Promise.all([
-                      api.getUsers(), api.getWorks(), api.getTasks(), api.getFinance(), api.getLogs(), api.getMaterials(), api.getOrders()
-                  ]);
-                  setUsers(u); setWorks(w); setTasks(t); setFinance(f); setLogs(l); setMaterials(m); setOrders(o);
-                  if (m.length === 0) setMaterials(DEFAULT_MATERIALS);
-              }
-          } catch (error) {
-              console.error("Failed to load data", error);
-          } finally {
+      if (!api.isOnline()) {
+          // Fallback for offline mode (if needed, or just initial fetch)
+          const loadOfflineData = async () => {
+              const [u, w, t, f, l, m, o] = await Promise.all([
+                  api.getUsers(), api.getWorks(), api.getTasks(), api.getFinance(), api.getLogs(), api.getMaterials(), api.getOrders()
+              ]);
+              setUsers(u); setWorks(w); setTasks(t); setFinance(f); setLogs(l); setMaterials(m); setOrders(o);
+              if (m.length === 0) setMaterials(DEFAULT_MATERIALS);
               setIsLoading(false);
-          }
+          };
+          loadOfflineData();
+          return;
+      }
+
+      // Online: Setup Global Listeners
+      setIsLoading(true);
+
+      const unsubUsers = api.subscribeToUsers(setUsers);
+      const unsubWorks = api.subscribeToWorks(setWorks);
+      const unsubTasks = api.subscribeToTasks(setTasks);
+      const unsubFinance = api.subscribeToFinance(setFinance);
+      const unsubMaterials = api.subscribeToMaterials((mats) => {
+          if (mats.length === 0) setMaterials(DEFAULT_MATERIALS);
+          else setMaterials(mats);
+      });
+      const unsubOrders = api.subscribeToOrders(setOrders);
+
+      // We only stop loading when we get initial data (approximated here by timeout or waiting for all)
+      // For simplicity, we turn off loading after a short delay or immediately since updates are async
+      setTimeout(() => setIsLoading(false), 800);
+
+      return () => {
+          unsubUsers();
+          unsubWorks();
+          unsubTasks();
+          unsubFinance();
+          unsubMaterials();
+          unsubOrders();
       };
-      loadData();
   }, []);
+
+  // --- SPECIFIC WORK LOGS SUBSCRIPTION ---
+  // Logs are heavy, so we only subscribe to them when inside a work.
+  useEffect(() => {
+      if (activeWorkId && api.isOnline()) {
+          const unsubLogs = api.subscribeToWorkLogs(activeWorkId, setLogs);
+          return () => unsubLogs();
+      } else if (!activeWorkId) {
+          setLogs([]); // Clear logs when not in a work
+      }
+  }, [activeWorkId]);
 
   const handleLogin = (user: User) => setCurrentUser(user);
   
   const handleRegister = async (user: User) => {
       await api.createUser(user);
-      setUsers([...users, user]);
+      // setUsers handled by subscription
   };
 
   const handleLogout = () => {
@@ -92,11 +126,10 @@ function App() {
       try {
           if (editingWork.id) {
               await api.updateWork(editingWork);
-              setWorks(prev => prev.map(w => w.id === editingWork.id ? editingWork : w));
+              // State updated by subscription
           } else {
               const newWork = { ...editingWork, id: Math.random().toString(36).substr(2, 9) };
               await api.createWork(newWork);
-              setWorks(prev => [...prev, newWork]);
           }
           setIsEditWorkModalOpen(false);
       } catch (err) {
@@ -114,20 +147,18 @@ function App() {
       if (window.confirm(confirmMessage)) {
           setIsDeletingWork(true);
           try {
-              // 1. Delete from Backend
               await api.deleteWork(id);
               
-              // 2. Cascade Delete in Frontend State (Immediate Visual Feedback)
+              // Optimistic UI updates (Cascade)
+              // Note: If subscription is fast enough, this might be redundant, but good for UX responsiveness
               setWorks(prev => prev.filter(w => w.id !== id));
               setTasks(prev => prev.filter(t => t.workId !== id));
               setFinance(prev => prev.filter(f => f.workId !== id));
               setLogs(prev => prev.filter(l => l.workId !== id));
               setOrders(prev => prev.filter(o => o.workId !== id));
 
-              // 3. Close Modal and Reset Navigation
               setIsEditWorkModalOpen(false);
               
-              // If we were inside the work we just deleted, go back to Dashboard
               if (activeWorkId === id) {
                   setActiveWorkId(null);
                   setCurrentView('WORKS');
@@ -397,20 +428,25 @@ function App() {
                                 users={users}
                                 currentUser={currentUser}
                                 taskStatuses={DEFAULT_TASK_STATUSES}
-                                onAddTask={(t) => { setTasks([...tasks, t]); api.createTask(t); }}
-                                onUpdateTask={(t) => { setTasks(tasks.map(old => old.id === t.id ? t : old)); api.updateTask(t); }}
+                                onAddTask={(t) => { 
+                                    // Subscription handles state update
+                                    api.createTask(t); 
+                                }}
+                                onUpdateTask={(t) => { 
+                                    api.updateTask(t); 
+                                }}
                               />
                           )}
                           {currentView === 'DIARIO' && (
                               <DailyLogView 
                                 workId={activeWorkId}
-                                logs={logs.filter(l => l.workId === activeWorkId)}
+                                logs={logs} // logs already filtered by activeWorkId in useEffect
                                 users={users}
                                 tasks={tasks.filter(t => t.workId === activeWorkId)}
                                 currentUser={currentUser}
-                                onAddLog={(l) => { setLogs([...logs, l]); api.createLog(l); }}
-                                onUpdateLog={(l) => { setLogs(logs.map(old => old.id === l.id ? l : old)); api.updateLog(l); }}
-                                onDeleteLog={(id) => { setLogs(logs.filter(l => l.id !== id)); api.deleteLog(id); }}
+                                onAddLog={(l) => { api.createLog(l); }}
+                                onUpdateLog={(l) => { api.updateLog(l); }}
+                                onDeleteLog={(id) => { api.deleteLog(id); }}
                               />
                           )}
                           {currentView === 'FINANCEIRO' && (
@@ -420,9 +456,9 @@ function App() {
                                 users={users}
                                 currentUser={currentUser}
                                 financeCategories={DEFAULT_FINANCE_CATEGORIES}
-                                onAddRecord={(r) => { setFinance([...finance, r]); api.createFinance(r); }}
-                                onUpdateRecord={(r) => { setFinance(finance.map(old => old.id === r.id ? r : old)); api.updateFinance(r); }}
-                                onDeleteRecord={(id) => { setFinance(finance.filter(f => f.id !== id)); api.deleteFinance(id); }}
+                                onAddRecord={(r) => { api.createFinance(r); }}
+                                onUpdateRecord={(r) => { api.updateFinance(r); }}
+                                onDeleteRecord={(id) => { api.deleteFinance(id); }}
                               />
                           )}
                       </div>
@@ -436,9 +472,9 @@ function App() {
                     works={works} 
                     users={users} 
                     taskStatuses={DEFAULT_TASK_STATUSES}
-                    onAddTask={(t) => { setTasks([...tasks, t]); api.createTask(t); }}
-                    onUpdateTask={(t) => { setTasks(tasks.map(old => old.id === t.id ? t : old)); api.updateTask(t); }}
-                    onDeleteTask={(id) => { setTasks(tasks.filter(t => t.id !== id)); api.deleteTask(id); }}
+                    onAddTask={(t) => { api.createTask(t); }}
+                    onUpdateTask={(t) => { api.updateTask(t); }}
+                    onDeleteTask={(id) => { api.deleteTask(id); }}
                   />
               )}
               {currentView === 'FINANCE' && !activeWorkId && (
@@ -447,9 +483,9 @@ function App() {
                     users={users} 
                     currentUser={currentUser} 
                     financeCategories={DEFAULT_FINANCE_CATEGORIES}
-                    onAddRecord={(r) => { setFinance([...finance, r]); api.createFinance(r); }}
-                    onUpdateRecord={(r) => { setFinance(finance.map(old => old.id === r.id ? r : old)); api.updateFinance(r); }}
-                    onDeleteRecord={(id) => { setFinance(finance.filter(f => f.id !== id)); api.deleteFinance(id); }}
+                    onAddRecord={(r) => { api.createFinance(r); }}
+                    onUpdateRecord={(r) => { api.updateFinance(r); }}
+                    onDeleteRecord={(id) => { api.deleteFinance(id); }}
                   />
               )}
               {currentView === 'MATERIALS' && !activeWorkId && (
@@ -460,8 +496,8 @@ function App() {
                     users={users}
                     materials={materials}
                     currentUser={currentUser}
-                    onAddOrder={(o) => { setOrders([...orders, o]); api.createOrder(o); }}
-                    onUpdateOrder={(o) => { setOrders(orders.map(old => old.id === o.id ? o : old)); api.updateOrder(o); }}
+                    onAddOrder={(o) => { api.createOrder(o); }}
+                    onUpdateOrder={(o) => { api.updateOrder(o); }}
                     onOpenMaterialCatalog={() => setCurrentView('TEAM')}
                   />
               )}
@@ -474,12 +510,12 @@ function App() {
                     taskStatuses={DEFAULT_TASK_STATUSES}
                     financeCategories={DEFAULT_FINANCE_CATEGORIES}
                     permissions={permissions}
-                    onAddUser={(u) => { setUsers([...users, u]); api.createUser(u); }}
-                    onUpdateUser={(u) => { setUsers(users.map(old => old.id === u.id ? u : old)); api.updateUser(u); }}
-                    onDeleteUser={(id) => { setUsers(users.filter(u => u.id !== id)); }}
-                    onAddMaterial={(m) => { setMaterials([...materials, m]); api.createMaterial(m); }}
-                    onUpdateMaterial={(m) => { setMaterials(materials.map(old => old.id === m.id ? m : old)); api.updateMaterial(m); }}
-                    onDeleteMaterial={(id) => { setMaterials(materials.filter(m => m.id !== id)); api.deleteMaterial(id); }}
+                    onAddUser={(u) => { api.createUser(u); }}
+                    onUpdateUser={(u) => { api.updateUser(u); }}
+                    onDeleteUser={(id) => { /* Implement User Delete via API if needed */ }}
+                    onAddMaterial={(m) => { api.createMaterial(m); }}
+                    onUpdateMaterial={(m) => { api.updateMaterial(m); }}
+                    onDeleteMaterial={(id) => { api.deleteMaterial(id); }}
                     onUpdateStatuses={() => {}}
                     onUpdatePermissions={setPermissions}
                   />
