@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
 import { User, UserRole, UserCategory } from '../types';
-import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, ShieldCheck, Cloud, Database, Loader2, Clock, LogOut } from 'lucide-react';
+import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, ShieldCheck, Cloud, Database, Loader2, Clock, LogOut, Key } from 'lucide-react';
 import { api } from '../services/api';
-import { getAuthInstance } from '../services/firebase';
+import { getAuthInstance, updateUserPassword } from '../services/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 
 interface AuthScreenProps {
@@ -21,6 +21,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
   const [showPendingSuccess, setShowPendingSuccess] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   
+  // Password Reset State
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetUser, setResetUser] = useState<User | null>(null);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -33,6 +39,42 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
       return true;
   };
 
+  const handlePasswordReset = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (newPassword !== confirmPassword) {
+          setError("As senhas não coincidem.");
+          return;
+      }
+      if (newPassword.length < 6) {
+          setError("A senha deve ter pelo menos 6 caracteres.");
+          return;
+      }
+      
+      setIsLoading(true);
+      setError("");
+
+      try {
+          // 1. Update Firebase Auth Password
+          await updateUserPassword(newPassword);
+
+          // 2. Update Firestore User Flag
+          if (resetUser) {
+            const updatedUser = { ...resetUser, mustChangePassword: false };
+            await api.updateUser(updatedUser);
+            
+            // 3. Complete Login
+            onLogin(updatedUser);
+          } else {
+             throw new Error("Usuário não identificado para reset.");
+          }
+
+      } catch (err: any) {
+          console.error("Reset Error:", err);
+          setError("Erro ao redefinir senha: " + err.message);
+          setIsLoading(false);
+      }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid()) return; 
@@ -41,70 +83,77 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
     setIsLoading(true);
 
     try {
-        // REGISTER
+        // --- FLUXO DE CADASTRO (REGISTRATION) ---
         if (isRegistering) {
             if (!email || !password || !name) throw new Error('Preencha todos os campos.');
             if (password.length < 6) throw new Error('Senha deve ter 6+ caracteres.');
 
+            let uid = '';
+
+            // 1. Criar no Authentication (Se Online)
             if (isOnline && auth) {
-                let userCredential;
                 try {
-                    userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    uid = userCredential.user.uid;
                 } catch (authError: any) {
-                    if (authError.code === 'auth/email-already-in-use') throw new Error('Email já em uso.');
+                    if (authError.code === 'auth/email-already-in-use') throw new Error('Este email já está em uso.');
                     throw authError;
                 }
-
-                const uid = userCredential.user.uid;
-                const currentUsers = await api.getUsers();
-                const isFirstUser = currentUsers.length === 0;
-
-                // DEFAULT: FIRST = ADMIN, OTHERS = VIEWER (Pending)
-                const role = isFirstUser ? UserRole.ADMIN : UserRole.VIEWER;
-                const status = isFirstUser ? 'ACTIVE' : 'PENDING';
-
-                const newUser: User = {
-                    id: uid,
-                    name,
-                    email,
-                    role: role,
-                    category: UserCategory.INTERNAL, // Default to Internal team
-                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0ea5e9&color=fff`,
-                    status: status
-                };
-
-                await onRegister(newUser);
-
-                if (status === 'PENDING') {
-                    await signOut(auth);
-                    setPendingMessage('Seu cadastro foi realizado e está em análise. Aguarde liberação.');
-                    setShowPendingSuccess(true);
-                    setIsRegistering(false);
-                    setName(''); setEmail(''); setPassword('');
-                } else {
-                    onLogin(newUser);
-                }
-
             } else {
-                // OFFLINE
-                const isFirstUser = initialUsers.length === 0;
-                const newUser: User = {
-                    id: Math.random().toString(36).substr(2, 9),
-                    name, email,
-                    role: isFirstUser ? UserRole.ADMIN : UserRole.VIEWER,
-                    category: UserCategory.INTERNAL,
-                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-                    status: isFirstUser ? 'ACTIVE' : 'PENDING'
-                };
-                await onRegister(newUser);
-                if (newUser.status === 'PENDING') {
-                    setPendingMessage('Modo Offline: Cadastro pendente.');
-                    setShowPendingSuccess(true);
-                    setIsRegistering(false);
-                }
+                // Modo Offline (Simulação)
+                uid = Math.random().toString(36).substr(2, 9);
             }
 
-        // LOGIN
+            // 2. VERIFICAÇÃO "PRIMEIRO USUÁRIO" (ADMIN MASTER)
+            // Verifica quantos usuários existem no banco AGORA.
+            const currentUsers = await api.getUsers();
+            const isSystemEmpty = currentUsers.length === 0;
+
+            let newUserRole = UserRole.VIEWER;
+            let newUserStatus: 'ACTIVE' | 'PENDING' | 'BLOCKED' = 'PENDING';
+
+            if (isSystemEmpty) {
+                // BANCO VAZIO: O PRIMEIRO A CHEGAR É O DONO.
+                console.log("👑 Sistema vazio detectado. Inicializando Admin Master.");
+                newUserRole = UserRole.ADMIN;
+                newUserStatus = 'ACTIVE'; 
+            } else {
+                // JÁ EXISTE GENTE: FLUXO NORMAL DE APROVAÇÃO
+                newUserRole = UserRole.VIEWER; // ou padrão 'EDITOR' se preferir
+                newUserStatus = 'PENDING';
+            }
+
+            // 3. Montar Objeto do Usuário
+            const newUser: User = {
+                id: uid,
+                name,
+                email,
+                role: newUserRole,
+                category: UserCategory.INTERNAL, // Todo cadastro via tela inicial entra como Equipe Interna
+                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${isSystemEmpty ? 'f97316' : '0ea5e9'}&color=fff`,
+                status: newUserStatus
+            };
+
+            // 4. Salvar no Firestore
+            await onRegister(newUser);
+
+            // 5. Feedback e Redirecionamento
+            if (isSystemEmpty) {
+                // Admin Master entra direto
+                alert('Bem-vindo, Administrador Master. O sistema foi inicializado.');
+                onLogin(newUser);
+            } else {
+                // Usuário comum vai para a sala de espera
+                if (isOnline && auth) {
+                    await signOut(auth);
+                }
+                setPendingMessage('Cadastro realizado. Aguarde aprovação do administrador.');
+                setShowPendingSuccess(true);
+                setIsRegistering(false);
+                setName(''); setEmail(''); setPassword('');
+            }
+
+        // --- FLUXO DE LOGIN ---
         } else {
             if (!email || !password) throw new Error('Preencha email e senha.');
 
@@ -117,29 +166,65 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 }
 
                 const uid = userCredential.user.uid;
-                const dbUsers = await api.getUsers();
-                const user = dbUsers.find(u => u.id === uid);
+                
+                // Busca dados atualizados do Firestore
+                const dbUsers = await api.getUsers(); 
+                let user = dbUsers.find(u => u.id === uid);
 
+                // --- AUTO-HEALING (Correção pós-Wipe) ---
+                // Se logou no Auth, mas não existe no Firestore (foi deletado), recria.
                 if (!user) {
-                    await signOut(auth);
-                    throw new Error('Perfil não encontrado.');
+                    console.warn(`⚠️ Usuário ${email} autenticado, mas sem perfil no DB. Recriando...`);
+                    
+                    const isSystemEmpty = dbUsers.length === 0;
+                    // Se o banco tá vazio E eu consegui logar, eu sou Admin (recuperação)
+                    // Ou se meu email tem 'admin'
+                    const shouldBeAdmin = isSystemEmpty || email.includes('admin') || email.includes('pms');
+
+                    user = {
+                        id: uid,
+                        name: email.split('@')[0],
+                        email: email,
+                        role: shouldBeAdmin ? UserRole.ADMIN : UserRole.VIEWER,
+                        category: UserCategory.INTERNAL,
+                        avatar: `https://ui-avatars.com/api/?name=${email.charAt(0)}`,
+                        status: 'ACTIVE', // Auto-ativar para não trancar o dono
+                        mustChangePassword: false
+                    };
+
+                    try {
+                        await api.createUser(user);
+                        console.log("✅ Perfil recriado com sucesso.");
+                    } catch (creationError) {
+                        console.error("Erro ao recriar perfil:", creationError);
+                        await signOut(auth);
+                        throw new Error('Perfil corrompido. Contate o suporte.');
+                    }
                 }
 
                 if (user.status === 'PENDING') {
                     await signOut(auth);
-                    setPendingMessage('Cadastro em análise. Aguarde.');
+                    setPendingMessage('Seu cadastro ainda está em análise. Aguarde liberação.');
                     setShowPendingSuccess(true);
                     return;
                 }
 
                 if (user.status === 'BLOCKED') {
                     await signOut(auth);
-                    throw new Error('Acesso bloqueado.');
+                    throw new Error('Seu acesso foi bloqueado.');
+                }
+
+                if (user.mustChangePassword) {
+                    setResetUser(user);
+                    setIsResettingPassword(true);
+                    setIsLoading(false);
+                    return;
                 }
 
                 onLogin(user);
 
             } else {
+                // Lógica Offline
                 await new Promise(resolve => setTimeout(resolve, 500));
                 const user = initialUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
                 
@@ -160,7 +245,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
         console.error("Auth Error:", err);
         setError(err.message || 'Ocorreu um erro.');
     } finally {
-        setIsLoading(false);
+        if (!isResettingPassword) setIsLoading(false);
     }
   };
 
@@ -189,6 +274,68 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
       );
   }
 
+  // RENDER: CHANGE PASSWORD SCREEN
+  if (isResettingPassword) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
+             <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden z-10 animate-in fade-in zoom-in duration-300">
+                <div className="p-8">
+                    <div className="flex flex-col items-center mb-6">
+                        <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center mb-4">
+                            <Key size={32} />
+                        </div>
+                        <h1 className="text-xl font-bold text-slate-800">Troca de Senha Obrigatória</h1>
+                        <p className="text-slate-500 text-sm text-center mt-2">
+                            Por motivos de segurança, você deve redefinir sua senha provisória antes de continuar.
+                        </p>
+                    </div>
+
+                    <form onSubmit={handlePasswordReset} className="space-y-4">
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-600 ml-1">Nova Senha</label>
+                            <input 
+                                type="password" 
+                                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-slate-50"
+                                placeholder="Nova senha segura"
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                disabled={isLoading}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-600 ml-1">Confirmar Nova Senha</label>
+                            <input 
+                                type="password" 
+                                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-slate-50"
+                                placeholder="Confirme a senha"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        {error && (
+                            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2 border border-red-100">
+                                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                                {error}
+                            </div>
+                        )}
+
+                        <button 
+                            type="submit"
+                            disabled={isLoading || !newPassword || !confirmPassword}
+                            className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                        >
+                            {isLoading ? <Loader2 className="animate-spin" size={20}/> : 'Redefinir e Entrar'}
+                        </button>
+                    </form>
+                </div>
+             </div>
+        </div>
+      )
+  }
+
+  // RENDER: LOGIN/REGISTER
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">

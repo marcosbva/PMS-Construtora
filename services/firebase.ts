@@ -1,7 +1,7 @@
 
-import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
+import { initializeApp, getApps, getApp, FirebaseApp, deleteApp } from "firebase/app";
 import { getFirestore, Firestore } from "firebase/firestore";
-import { getAuth, Auth } from "firebase/auth";
+import { getAuth, Auth, createUserWithEmailAndPassword, signOut, updatePassword } from "firebase/auth";
 
 // Configuração Fixa (Hardcoded)
 // Credenciais limpas e corrigidas para garantir conexão
@@ -51,6 +51,44 @@ export const getDb = (): Firestore | null => {
 export const getAuthInstance = (): Auth | null => {
     return auth;
 };
+
+/**
+ * Cria um usuário no Firebase Auth usando uma instância secundária do App.
+ * Isso previne que o Administrador atual seja deslogado ao criar um novo usuário.
+ */
+export const createSecondaryAuthUser = async (email: string, pass: string): Promise<string> => {
+    if (!db) throw new Error("Modo Offline: Não é possível criar autenticação.");
+
+    // 1. Inicializa um app secundário com nome único
+    const secondaryAppName = `SecondaryApp-${Date.now()}`;
+    const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+        // 2. Cria o usuário na instância secundária
+        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+        const uid = userCredential.user.uid;
+
+        // 3. Desloga da instância secundária imediatamente
+        await signOut(secondaryAuth);
+        
+        return uid;
+    } catch (error: any) {
+        console.error("Erro ao criar usuário secundário:", error);
+        throw error;
+    } finally {
+        // 4. Limpeza: Remove a instância secundária da memória
+        deleteApp(secondaryApp).catch(err => console.warn("Erro ao limpar app secundário", err));
+    }
+};
+
+/**
+ * Atualiza a senha do usuário atual
+ */
+export const updateUserPassword = async (newPass: string) => {
+    if (!auth || !auth.currentUser) throw new Error("Usuário não autenticado.");
+    await updatePassword(auth.currentUser, newPass);
+}
 
 // Funções mantidas para compatibilidade com o resto do sistema, mas simplificadas
 export const initializeFirebase = (config: any): boolean => !!db;

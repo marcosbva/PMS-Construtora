@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon } from 'lucide-react';
-import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb } from '../services/firebase';
+import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition, RolePermissionsMap, AppPermissions } from '../types';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy } from 'lucide-react';
+import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSecondaryAuthUser } from '../services/firebase';
 import { api } from '../services/api';
 
 interface UserManagementProps {
@@ -10,9 +10,10 @@ interface UserManagementProps {
   users: User[];
   materials: Material[];
   orders?: MaterialOrder[];
-  initialTab?: 'INTERNAL' | 'CLIENTS' | 'SUPPLIERS' | 'SETTINGS' | 'MATERIALS' | 'FINANCE_CATEGORIES';
+  initialTab?: 'INTERNAL' | 'CLIENTS' | 'SUPPLIERS' | 'SETTINGS' | 'MATERIALS' | 'FINANCE_CATEGORIES' | 'PERMISSIONS';
   taskStatuses: TaskStatusDefinition[];
   financeCategories?: FinanceCategoryDefinition[];
+  permissions: RolePermissionsMap;
   onAddUser: (user: User) => void;
   onUpdateUser: (user: User) => void;
   onDeleteUser: (userId: string) => void;
@@ -23,18 +24,20 @@ interface UserManagementProps {
   onAddCategory?: (category: FinanceCategoryDefinition) => void;
   onUpdateCategory?: (category: FinanceCategoryDefinition) => void;
   onDeleteCategory?: (categoryId: string) => void;
+  onUpdatePermissions: (permissions: RolePermissionsMap) => void;
 }
 
 export const UserManagement: React.FC<UserManagementProps> = ({ 
     currentUser, 
     users, materials, orders = [], initialTab = 'INTERNAL', taskStatuses,
-    financeCategories = [],
+    financeCategories = [], permissions,
     onAddUser, onUpdateUser, onDeleteUser,
     onUpdateStatuses,
     onAddMaterial, onUpdateMaterial, onDeleteMaterial,
-    onAddCategory, onUpdateCategory, onDeleteCategory
+    onAddCategory, onUpdateCategory, onDeleteCategory,
+    onUpdatePermissions
 }) => {
-  const [activeTab, setActiveTab] = useState<'INTERNAL' | 'CLIENTS' | 'SUPPLIERS' | 'SETTINGS' | 'MATERIALS' | 'FINANCE_CATEGORIES'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'INTERNAL' | 'CLIENTS' | 'SUPPLIERS' | 'SETTINGS' | 'MATERIALS' | 'FINANCE_CATEGORIES' | 'PERMISSIONS'>(initialTab);
   
   useEffect(() => {
       if (initialTab) setActiveTab(initialTab);
@@ -45,6 +48,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   
+  // Feedback Modal State (New User Credentials)
+  const [createdUserCreds, setCreatedUserCreds] = useState<{email: string, pass: string} | null>(null);
+
   // Cloud State
   const isCloudConnected = !!getDb();
 
@@ -56,6 +62,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [editingStatus, setEditingStatus] = useState<TaskStatusDefinition | null>(null);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [editingCategory, setEditingCategory] = useState<FinanceCategoryDefinition | null>(null);
+
+  // Permission Editing State
+  const [localPermissions, setLocalPermissions] = useState<RolePermissionsMap>(permissions);
+
+  // Update local permissions if parent state changes (sync)
+  useEffect(() => {
+      setLocalPermissions(permissions);
+  }, [permissions]);
 
   // --- FORM STATES ---
   const [userName, setUserName] = useState('');
@@ -90,12 +104,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           case 'SUPPLIERS': return 'Fornecedores';
           case 'MATERIALS': return 'Materiais';
           case 'FINANCE_CATEGORIES': return 'Categorias Financeiras';
+          case 'PERMISSIONS': return 'Permissões de Acesso';
           default: return '';
       }
   };
 
   const getFilteredUsers = () => {
-      if (activeTab === 'SETTINGS' || activeTab === 'MATERIALS' || activeTab === 'FINANCE_CATEGORIES') return [];
+      if (activeTab === 'SETTINGS' || activeTab === 'MATERIALS' || activeTab === 'FINANCE_CATEGORIES' || activeTab === 'PERMISSIONS') return [];
       const categoryMap: Record<string, UserCategory> = {
           'INTERNAL': UserCategory.INTERNAL,
           'CLIENTS': UserCategory.CLIENT,
@@ -169,16 +184,48 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     }
   };
 
+  const generateTemporaryPassword = () => {
+      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#";
+      let pass = "";
+      for (let i = 0; i < 8; i++) {
+          pass += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return pass;
+  };
+
   const saveUser = async () => {
       if (!userName) return;
       setIsSaving(true);
       try {
         const finalAvatar = userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=random`;
-
         // Safety: If Client, enforce VIEWER role always
         const finalRole = userCategory === UserCategory.CLIENT ? UserRole.VIEWER : userRole;
 
-        const userData = {
+        let uid = editingUser ? editingUser.id : Math.random().toString(36).substr(2, 9);
+        let mustChangePassword = editingUser?.mustChangePassword || false;
+        let tempPassword = "";
+
+        // --- CREATE AUTH USER LOGIC (NEW USER & ONLINE) ---
+        if (!editingUser && isCloudConnected && userEmail) {
+            tempPassword = generateTemporaryPassword();
+            try {
+                // Create user in Firebase Auth using Secondary App (doesn't log out admin)
+                uid = await createSecondaryAuthUser(userEmail, tempPassword);
+                mustChangePassword = true; // Force change on first login
+            } catch (authError: any) {
+                if (authError.code === 'auth/email-already-in-use') {
+                     // If email exists, we try to find if we have it in DB, or fail
+                     alert("Este e-mail já está cadastrado no sistema de autenticação.");
+                     setIsSaving(false);
+                     return;
+                } else {
+                    throw authError;
+                }
+            }
+        }
+
+        const userData: User = {
+            id: uid,
             name: userName, 
             email: userEmail, 
             category: userCategory, 
@@ -188,17 +235,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             address: userAddress, 
             phone: userPhone, 
             birthDate: userBirth,
-            avatar: finalAvatar
+            avatar: finalAvatar,
+            mustChangePassword: mustChangePassword
         };
 
         if (editingUser) {
             await onUpdateUser({ ...editingUser, ...userData });
         } else {
-            const newUser: User = { 
-                id: Math.random().toString(36).substr(2, 9), 
-                ...userData
-            };
-            await onAddUser(newUser);
+            await onAddUser(userData);
+            // If we created an Auth user, show credentials
+            if (tempPassword) {
+                setCreatedUserCreds({ email: userEmail, pass: tempPassword });
+            }
         }
         setIsUserModalOpen(false);
       } catch (error: any) {
@@ -250,6 +298,42 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       }
   };
 
+  // --- PERMISSION HANDLERS ---
+  const togglePermission = (role: UserRole, key: keyof AppPermissions) => {
+      setLocalPermissions(prev => {
+          const newPermissions = { ...prev };
+          newPermissions[role] = {
+              ...newPermissions[role],
+              [key]: !newPermissions[role][key]
+          };
+          return newPermissions;
+      });
+  };
+
+  const savePermissions = async () => {
+      setIsSaving(true);
+      try {
+          await onUpdatePermissions(localPermissions);
+          alert("Permissões atualizadas com sucesso!");
+      } catch (error) {
+          alert("Erro ao salvar permissões.");
+      } finally {
+          setIsSaving(false);
+      }
+  };
+
+  const PERMISSION_LABELS: Record<keyof AppPermissions, string> = {
+      viewDashboard: "Visualizar Dashboard Geral",
+      viewWorks: "Visualizar Lista de Obras",
+      manageWorks: "Gerenciar (Criar/Editar) Obras",
+      viewFinance: "Visualizar Módulo Financeiro",
+      manageFinance: "Gerenciar Financeiro (Lançamentos)",
+      viewGlobalTasks: "Visualizar Tarefas (Kanban)",
+      viewMaterials: "Visualizar Catálogo de Materiais",
+      manageMaterials: "Gerenciar Materiais e Pedidos",
+      manageUsers: "Gerenciar Usuários e Configurações",
+      isSystemAdmin: "Administrador do Sistema (Acesso Total)"
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto min-h-screen">
@@ -259,7 +343,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           <h2 className="text-2xl font-bold text-slate-800">Cadastros e Acessos</h2>
           <p className="text-slate-500">Gerencie colaboradores, clientes, fornecedores e configurações.</p>
         </div>
-        {activeTab !== 'SETTINGS' && (
+        {activeTab !== 'SETTINGS' && activeTab !== 'PERMISSIONS' && (
           <button 
             onClick={() => {
                 if (activeTab === 'MATERIALS') openMaterialModal();
@@ -281,6 +365,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           <TabButton active={activeTab === 'SUPPLIERS'} onClick={() => setActiveTab('SUPPLIERS')} icon={<Truck size={18}/>} label="Fornecedores" />
           <TabButton active={activeTab === 'MATERIALS'} onClick={() => setActiveTab('MATERIALS')} icon={<Package size={18}/>} label="Materiais" />
           <TabButton active={activeTab === 'FINANCE_CATEGORIES'} onClick={() => setActiveTab('FINANCE_CATEGORIES')} icon={<Wallet size={18}/>} label="Categorias Fin." />
+          {currentUser.role === UserRole.ADMIN && (
+              <TabButton active={activeTab === 'PERMISSIONS'} onClick={() => setActiveTab('PERMISSIONS')} icon={<Shield size={18}/>} label="Permissões" />
+          )}
           <TabButton active={activeTab === 'SETTINGS'} onClick={() => setActiveTab('SETTINGS')} icon={<Settings size={18}/>} label="Configurações" />
       </div>
 
@@ -341,9 +428,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   </div>
                   <div className="flex gap-1">
                       <button onClick={() => openUserModal(user)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                      {/* Only Show Delete Button if Admin */}
-                      {currentUser.role === UserRole.ADMIN && user.id !== currentUser.id && (
-                        <button onClick={() => onDeleteUser(user.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
+                      
+                      {/* DELETE BUTTON - Now checks permission matrix OR Admin role */}
+                      {(currentUser.role === UserRole.ADMIN || permissions[currentUser.role]?.manageUsers) && user.id !== currentUser.id && (
+                        <button 
+                            onClick={() => onDeleteUser(user.id)} 
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Excluir Usuário"
+                        >
+                            <Trash2 size={16} />
+                        </button>
                       )}
                   </div>
                 </div>
@@ -372,6 +466,94 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                     Nenhum usuário encontrado nesta categoria.
                 </div>
             )}
+        </div>
+      )}
+
+      {/* PERMISSIONS TAB */}
+      {activeTab === 'PERMISSIONS' && currentUser.role === UserRole.ADMIN && (
+        <div className="animate-fade-in space-y-6">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div>
+                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                            <Shield size={20} className="text-pms-600"/> Matriz de Permissões
+                        </h3>
+                        <p className="text-sm text-slate-500">Defina o que cada cargo pode fazer no sistema.</p>
+                    </div>
+                    <button 
+                        onClick={savePermissions}
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-pms-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-pms-500 transition-colors disabled:opacity-50"
+                    >
+                        {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18} />}
+                        Salvar Alterações
+                    </button>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-100 text-xs uppercase text-slate-500 font-bold">
+                            <tr>
+                                <th className="px-6 py-4 w-1/3">Funcionalidade</th>
+                                <th className="px-6 py-4 text-center text-purple-600">ADMIN (Total)</th>
+                                <th className="px-6 py-4 text-center text-blue-600">EDITOR (Equipe)</th>
+                                <th className="px-6 py-4 text-center text-slate-600">VIEWER (Visitante)</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {(Object.keys(PERMISSION_LABELS) as Array<keyof AppPermissions>).map((key) => (
+                                <tr key={key} className="hover:bg-slate-50">
+                                    <td className="px-6 py-4 text-sm font-bold text-slate-700">
+                                        {PERMISSION_LABELS[key]}
+                                        <p className="text-[10px] font-normal text-slate-400 font-mono">{key}</p>
+                                    </td>
+                                    {/* ADMIN COLUMN (Usually Locked) */}
+                                    <td className="px-6 py-4 text-center bg-purple-50/30">
+                                        <div className="flex justify-center">
+                                            <button 
+                                                onClick={() => togglePermission(UserRole.ADMIN, key)}
+                                                className={`p-1 rounded transition-colors ${localPermissions[UserRole.ADMIN][key] ? 'text-green-600' : 'text-red-300'}`}
+                                                // We generally don't want to disable Admin permissions easily to prevent lockout, 
+                                                // but let's allow it if the user insists, except SystemAdmin
+                                                disabled={key === 'isSystemAdmin' || key === 'manageUsers'}
+                                            >
+                                                {localPermissions[UserRole.ADMIN][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
+                                            </button>
+                                        </div>
+                                    </td>
+                                    {/* EDITOR COLUMN */}
+                                    <td className="px-6 py-4 text-center bg-blue-50/30">
+                                        <div className="flex justify-center">
+                                            <button 
+                                                onClick={() => togglePermission(UserRole.EDITOR, key)}
+                                                className={`p-1 rounded transition-colors ${localPermissions[UserRole.EDITOR][key] ? 'text-green-600' : 'text-slate-300 hover:text-slate-500'}`}
+                                                disabled={key === 'isSystemAdmin'}
+                                            >
+                                                {localPermissions[UserRole.EDITOR][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
+                                            </button>
+                                        </div>
+                                    </td>
+                                    {/* VIEWER COLUMN */}
+                                    <td className="px-6 py-4 text-center">
+                                        <div className="flex justify-center">
+                                            <button 
+                                                onClick={() => togglePermission(UserRole.VIEWER, key)}
+                                                className={`p-1 rounded transition-colors ${localPermissions[UserRole.VIEWER][key] ? 'text-green-600' : 'text-slate-300 hover:text-slate-500'}`}
+                                                disabled={key === 'isSystemAdmin'}
+                                            >
+                                                {localPermissions[UserRole.VIEWER][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="p-4 bg-yellow-50 text-yellow-800 text-sm flex items-center gap-2 border-t border-yellow-100">
+                    <AlertTriangle size={16} />
+                    <strong>Nota:</strong> Usuários da categoria <strong>CLIENTE</strong> terão sempre acesso limitado, independentemente desta configuração, por segurança.
+                </div>
+            </div>
         </div>
       )}
 
@@ -515,6 +697,48 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             </div>
           </div>
         </div>
+      )}
+      
+      {/* NEW USER CREDENTIALS MODAL */}
+      {createdUserCreds && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+              <div className="bg-white rounded-xl w-full max-w-md p-8 shadow-2xl text-center">
+                  <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Check size={32} />
+                  </div>
+                  <h3 className="text-2xl font-bold text-slate-800 mb-2">Usuário Criado!</h3>
+                  <p className="text-slate-500 mb-6">O login foi gerado automaticamente. Envie as credenciais abaixo para o usuário.</p>
+                  
+                  <div className="bg-slate-100 p-4 rounded-lg border border-slate-200 text-left mb-6">
+                      <div className="mb-3">
+                          <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Login / Email</label>
+                          <div className="flex items-center justify-between bg-white p-2 rounded border border-slate-200">
+                              <code className="font-mono text-slate-800">{createdUserCreds.email}</code>
+                              <button onClick={() => navigator.clipboard.writeText(createdUserCreds.email)} className="text-slate-400 hover:text-pms-600"><Copy size={16}/></button>
+                          </div>
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Senha Provisória</label>
+                          <div className="flex items-center justify-between bg-white p-2 rounded border border-slate-200">
+                              <code className="font-mono text-slate-800 font-bold tracking-wider">{createdUserCreds.pass}</code>
+                              <button onClick={() => navigator.clipboard.writeText(createdUserCreds.pass)} className="text-slate-400 hover:text-pms-600"><Copy size={16}/></button>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <div className="bg-yellow-50 p-3 rounded border border-yellow-100 text-xs text-yellow-700 flex items-start gap-2 text-left mb-6">
+                      <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                      O usuário será obrigado a redefinir esta senha no primeiro acesso.
+                  </div>
+
+                  <button 
+                    onClick={() => setCreatedUserCreds(null)}
+                    className="w-full bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition-colors"
+                  >
+                      Entendido, Fechar
+                  </button>
+              </div>
+          </div>
       )}
 
       {/* MATERIAL MODAL */}

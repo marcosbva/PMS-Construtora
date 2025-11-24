@@ -11,8 +11,23 @@ export enum UserCategory {
   SUPPLIER = 'SUPPLIER'  // Fornecedor de materiais
 }
 
-// Mapeamento Estático de Permissões (Hardcoded para segurança e simplicidade)
-export const ROLE_PERMISSIONS = {
+export interface AppPermissions {
+  viewDashboard: boolean;
+  viewWorks: boolean;
+  manageWorks: boolean;
+  viewFinance: boolean;
+  manageFinance: boolean;
+  viewGlobalTasks: boolean;
+  viewMaterials: boolean;
+  manageMaterials: boolean;
+  manageUsers: boolean;
+  isSystemAdmin: boolean;
+}
+
+export type RolePermissionsMap = Record<UserRole, AppPermissions>;
+
+// Mapeamento Estático Inicial (Fallback)
+export const DEFAULT_ROLE_PERMISSIONS: RolePermissionsMap = {
   [UserRole.ADMIN]: {
     viewDashboard: true,
     viewWorks: true,
@@ -51,18 +66,8 @@ export const ROLE_PERMISSIONS = {
   }
 };
 
-export interface AppPermissions {
-  viewDashboard: boolean;
-  viewWorks: boolean;
-  manageWorks: boolean;
-  viewFinance: boolean;
-  manageFinance: boolean;
-  viewGlobalTasks: boolean;
-  viewMaterials: boolean;
-  manageMaterials: boolean;
-  manageUsers: boolean;
-  isSystemAdmin?: boolean;
-}
+// Mantendo exportação antiga para compatibilidade temporária, mas apontando para o default
+export const ROLE_PERMISSIONS = DEFAULT_ROLE_PERMISSIONS;
 
 export interface User {
   id: string;
@@ -80,6 +85,9 @@ export interface User {
   phone?: string;
   birthDate?: string;
   notes?: string;
+  
+  // SECURITY
+  mustChangePassword?: boolean; // Obrigar troca de senha no primeiro acesso
 }
 
 export enum WorkStatus {
@@ -170,6 +178,40 @@ export interface FinancialRecord {
   status: 'Pendente' | 'Pago' | 'Atrasado';
 }
 
+// --- WORKFORCE TYPES ---
+export type WorkforceRole = 'Pedreiro' | 'Servente' | 'Eletricista' | 'Bombeiro' | 'Carpinteiro' | 'Ferreiro' | 'Pintor' | 'Gesseiro' | 'Terceirizados';
+
+export const WORKFORCE_ROLES_LIST: WorkforceRole[] = [
+  'Pedreiro', 'Servente', 'Eletricista', 'Bombeiro', 'Carpinteiro', 'Ferreiro', 'Pintor', 'Gesseiro', 'Terceirizados'
+];
+
+// --- INTERCORRÊNCIA / ISSUE TYPES ---
+export type IssueCategory = 
+  | 'Acidente de Trabalho'
+  | 'Erro de Execução'
+  | 'Erro de Projeto'
+  | 'Material Danificado/Faltante'
+  | 'Equipamento Quebrado'
+  | 'Condições Climáticas'
+  | 'Embargo/Fiscalização'
+  | 'Interferência Externa'
+  | 'Outros';
+
+export const ISSUE_CATEGORIES_LIST: IssueCategory[] = [
+  'Acidente de Trabalho',
+  'Erro de Execução',
+  'Erro de Projeto',
+  'Material Danificado/Faltante',
+  'Equipamento Quebrado',
+  'Condições Climáticas',
+  'Embargo/Fiscalização',
+  'Interferência Externa',
+  'Outros'
+];
+
+export type IssueSeverity = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
+export type IssueImpact = 'Prazo' | 'Custo' | 'Qualidade' | 'Segurança' | 'Meio Ambiente';
+
 export interface DailyLog {
   id: string;
   workId: string;
@@ -177,10 +219,23 @@ export interface DailyLog {
   date: string;
   content: string;
   images: string[];
-  type: 'Diário' | 'Vistoria' | 'Alerta';
+  type: 'Diário' | 'Vistoria' | 'Alerta' | 'Intercorrência';
   weather?: 'Sol' | 'Nublado' | 'Chuva' | 'Neve';
   relatedTaskId?: string;
   teamIds?: string[];
+  
+  // Efetivo do dia
+  workforce?: Record<string, number>; 
+
+  // Campos de Intercorrência
+  issueCategory?: IssueCategory;
+  severity?: IssueSeverity;
+  impacts?: IssueImpact[];
+  actionPlan?: string; // O que foi feito imediatamente
+
+  isResolved?: boolean;
+  resolvedAt?: string;
+  resolvedBy?: string;
 }
 
 export enum OrderStatus {
