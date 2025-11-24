@@ -1,3 +1,5 @@
+
+
 import { 
   collection, 
   getDocs, 
@@ -15,7 +17,7 @@ import {
   Firestore
 } from "firebase/firestore";
 import { getDb } from "./firebase";
-import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, FinanceCategoryDefinition } from "../types";
+import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, FinanceCategoryDefinition, WorkBudget } from "../types";
 
 const COLLECTIONS = {
   USERS: 'users',
@@ -25,7 +27,8 @@ const COLLECTIONS = {
   LOGS: 'logs',
   MATERIALS: 'materials',
   ORDERS: 'orders',
-  CATEGORIES: 'categories'
+  CATEGORIES: 'categories',
+  BUDGETS: 'budgets'
 };
 
 // Helper to remove undefined fields which Firestore hates
@@ -103,6 +106,7 @@ export const api = {
           const finQ = query(collection(db, COLLECTIONS.FINANCE), where('workId', '==', id));
           const logsQ = query(collection(db, COLLECTIONS.LOGS), where('workId', '==', id));
           const ordersQ = query(collection(db, COLLECTIONS.ORDERS), where('workId', '==', id));
+          const budgetRef = doc(db, COLLECTIONS.BUDGETS, id); // Budget ID = Work ID
 
           const [tS, fS, lS, oS] = await Promise.all([getDocs(tasksQ), getDocs(finQ), getDocs(logsQ), getDocs(ordersQ)]);
           
@@ -110,7 +114,8 @@ export const api = {
               ...tS.docs.map(d => deleteDoc(d.ref)),
               ...fS.docs.map(d => deleteDoc(d.ref)),
               ...lS.docs.map(d => deleteDoc(d.ref)),
-              ...oS.docs.map(d => deleteDoc(d.ref))
+              ...oS.docs.map(d => deleteDoc(d.ref)),
+              deleteDoc(budgetRef)
           ];
           
           await Promise.allSettled(subDeletions);
@@ -327,6 +332,24 @@ export const api = {
       const db = getDb();
       if (!db) return;
       await deleteDoc(doc(db, COLLECTIONS.CATEGORIES, id));
+  },
+
+  // --- BUDGETS ---
+  getBudget: async (workId: string): Promise<WorkBudget | null> => {
+      const db = getDb();
+      if (!db) return null;
+      // Budget ID is 1:1 with Work ID for simplicity
+      const snap = await getDoc(doc(db, COLLECTIONS.BUDGETS, workId));
+      if (snap.exists()) {
+          return snap.data() as WorkBudget;
+      }
+      return null;
+  },
+  saveBudget: async (budget: WorkBudget) => {
+      const db = getDb();
+      if (!db) return;
+      // Using setDoc with workId as key
+      await setDoc(doc(db, COLLECTIONS.BUDGETS, budget.workId), cleanData(budget));
   },
 
   restoreDefaults: async () => {

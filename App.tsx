@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -10,9 +11,10 @@ import { UserManagement } from './components/UserManagement';
 import { DailyLogView } from './components/DailyLog';
 import { Dashboard } from './components/Dashboard';
 import { WorkOverview } from './components/WorkOverview';
+import { BudgetPlanner } from './components/BudgetPlanner';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
-import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle } from 'lucide-react';
+import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle, Calculator } from 'lucide-react';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -157,7 +159,7 @@ function App() {
               
               if (activeWorkId === id) {
                   setActiveWorkId(null);
-                  setCurrentView('WORKS');
+                  setCurrentView('DASHBOARD'); // Redirect to dashboard on delete
               }
               
               alert("Obra excluída com sucesso!");
@@ -203,6 +205,11 @@ function App() {
               <button onClick={() => { setCurrentView('WORKS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'WORKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Briefcase size={18} /> Obras
               </button>
+              {/* NEW BUDGET BUTTON */}
+              <button onClick={() => { setCurrentView('BUDGET'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'BUDGET' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                  <Calculator size={18} /> Orçamentos
+              </button>
+
               <button onClick={() => { setCurrentView('TASKS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'TASKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Menu size={18} /> Tarefas Gerais
               </button>
@@ -289,7 +296,12 @@ function App() {
               {activeWorkId && (
                   <div className="h-full flex flex-col">
                       <div className="flex items-center gap-4 mb-6">
-                          <button onClick={() => setActiveWorkId(null)} className="text-slate-400 hover:text-slate-600 font-bold text-sm">← Voltar</button>
+                          <button 
+                            onClick={() => { setActiveWorkId(null); setCurrentView('DASHBOARD'); }} 
+                            className="text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors"
+                          >
+                            ← Voltar
+                          </button>
                           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
                               {works.find(w => w.id === activeWorkId)?.name} 
                               <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded">Painel de Obra</span>
@@ -314,7 +326,7 @@ function App() {
                                 work={works.find(w => w.id === activeWorkId)!}
                                 users={users}
                                 onUpdateWork={(w) => api.updateWork(w)}
-                                onDeleteWork={handleDeleteWork}
+                                onDeleteWork={async (id) => { await handleDeleteWork(id); }}
                               />
                           )}
                           {currentView === 'KANBAN' && (
@@ -355,6 +367,11 @@ function App() {
                           )}
                       </div>
                   </div>
+              )}
+
+              {/* BUDGET PLANNER VIEW */}
+              {currentView === 'BUDGET' && !activeWorkId && (
+                  <BudgetPlanner works={works} />
               )}
 
               {currentView === 'TASKS' && !activeWorkId && (

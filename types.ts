@@ -1,4 +1,5 @@
 
+
 export enum UserRole {
   ADMIN = 'ADMIN',   // Acesso Total (Super Usuário)
   EDITOR = 'EDITOR', // Pode criar/editar obras, tarefas, financeiro (Gerente/Mestre)
@@ -280,4 +281,32 @@ export interface Material {
   brand?: string;
   priceEstimate?: number;
   description?: string;
+}
+
+// --- BUDGETING TYPES (ORÇAMENTO) ---
+
+export interface BudgetItem {
+  id: string;
+  description: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number; // Calculated: qty * unitPrice
+  notes?: string;
+}
+
+export interface BudgetCategory {
+  id: string;
+  name: string; // e.g. "1. Serviços Preliminares"
+  items: BudgetItem[];
+  categoryTotal: number; // Calculated sum of items
+}
+
+export interface WorkBudget {
+  id: string; // Usually matches workId for 1:1 relationship
+  workId: string;
+  totalValue: number;
+  categories: BudgetCategory[];
+  updatedAt: string;
+  version?: number;
 }

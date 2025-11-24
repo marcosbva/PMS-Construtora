@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
@@ -25,6 +26,10 @@ const parseEntity = (entity: any) => {
     }
     if (newItem.quotes && typeof newItem.quotes === 'string') {
         try { newItem.quotes = JSON.parse(newItem.quotes); } catch(e){}
+    }
+    // Parse Budget Categories
+    if (newItem.categories && typeof newItem.categories === 'string') {
+        try { newItem.categories = JSON.parse(newItem.categories); } catch(e){}
     }
     return newItem;
 };
@@ -59,7 +64,7 @@ app.get('/api/initial-data', asyncHandler(async (req, res) => {
 // --- GENERIC CRUD ---
 const stringifyFields = (data: any) => {
     const newData = { ...data };
-    ['teamIds', 'images', 'quotes'].forEach(key => {
+    ['teamIds', 'images', 'quotes', 'categories'].forEach(key => {
         if (newData[key] && typeof newData[key] === 'object') {
             newData[key] = JSON.stringify(newData[key]);
         }
@@ -99,6 +104,15 @@ app.put('/api/orders/:id', asyncHandler(async (req, res) => { res.json(parseEnti
 // Configs
 app.post('/api/categories', asyncHandler(async (req, res) => { res.json(await prisma.financeCategory.create({ data: req.body })) }));
 app.post('/api/logs', asyncHandler(async (req, res) => { res.json(parseEntity(await prisma.dailyLog.create({ data: stringifyFields(req.body) }))) }));
+
+// Budgets
+app.get('/api/budgets/:workId', asyncHandler(async (req, res) => {
+    // Note: This requires a 'WorkBudget' table in Prisma Schema which might not exist in the Seed file provided previously.
+    // If running strictly locally with the previous seed file, this might fail unless updated.
+    // Assuming schema allows raw JSON storage or generic table.
+    // For this prototype, if it fails, the frontend handles it gracefully via Firebase fallback.
+    res.json({ error: "Use Firebase for Budgets in this version" });
+}));
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

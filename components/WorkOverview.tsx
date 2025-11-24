@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { ConstructionWork, WorkStatus, User, UserCategory } from '../types';
-import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle } from 'lucide-react';
+import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget } from '../types';
+import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, ExternalLink } from 'lucide-react';
+import { api } from '../services/api';
 
 interface WorkOverviewProps {
   work: ConstructionWork;
@@ -14,12 +15,37 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, onUpdat
   const [formData, setFormData] = useState<ConstructionWork>(work);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [budgetData, setBudgetData] = useState<WorkBudget | null>(null);
+  const [isLoadingBudget, setIsLoadingBudget] = useState(true);
 
   // Sync state if prop changes (e.g. background update)
   useEffect(() => {
     setFormData(work);
     setIsDirty(false);
   }, [work]);
+
+  // Fetch Budget Data from the new Module
+  useEffect(() => {
+    const fetchBudget = async () => {
+        setIsLoadingBudget(true);
+        try {
+            const b = await api.getBudget(work.id);
+            setBudgetData(b);
+            
+            // If budget exists, sync the ConstructionWork budget field to match the calculated total
+            if (b && b.totalValue !== work.budget) {
+                setFormData(prev => ({ ...prev, budget: b.totalValue }));
+                // We don't set isDirty here to avoid annoying 'unsaved changes' warnings immediately on load,
+                // but the next save will persist this sync.
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsLoadingBudget(false);
+        }
+    };
+    fetchBudget();
+  }, [work.id]);
 
   const handleChange = (field: keyof ConstructionWork, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -155,16 +181,32 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, onUpdat
                          </select>
                     </div>
                     
+                    {/* BUDGET FIELD LINKED TO MODULE */}
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Orçamento Previsto</label>
+                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase flex items-center gap-1">
+                           <Calculator size={14} /> Orçamento Previsto (Módulo)
+                        </label>
                         <div className="relative">
                             <span className="absolute left-3 top-3 text-slate-500 font-bold text-sm">R$</span>
-                            <input 
-                                type="number" 
-                                className="w-full pl-9 border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-pms-500 outline-none font-bold text-slate-700"
-                                value={formData.budget}
-                                onChange={(e) => handleChange('budget', parseFloat(e.target.value) || 0)}
-                            />
+                            
+                            {isLoadingBudget ? (
+                                <div className="w-full h-[46px] border border-slate-200 bg-slate-50 rounded-lg flex items-center pl-9 text-slate-400">
+                                    <Loader2 className="animate-spin mr-2" size={16}/> Carregando...
+                                </div>
+                            ) : budgetData ? (
+                                <input 
+                                    type="text" 
+                                    readOnly
+                                    className="w-full pl-9 border border-slate-200 bg-slate-50 rounded-lg p-3 text-sm font-bold text-slate-700 cursor-not-allowed outline-none"
+                                    value={budgetData.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    title="Gerencie este valor no menu 'Orçamentos'"
+                                />
+                            ) : (
+                                <div className="w-full border border-orange-200 bg-orange-50 rounded-lg p-3 flex items-center gap-2">
+                                     <AlertTriangle size={16} className="text-orange-500" />
+                                     <span className="text-xs font-bold text-orange-700">Pendente: Fazer Orçamento</span>
+                                </div>
+                            )}
                         </div>
                     </div>
 
