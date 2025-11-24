@@ -1,3 +1,4 @@
+
 import { 
   collection, 
   getDocs, 
@@ -15,7 +16,7 @@ import {
   Firestore
 } from "firebase/firestore";
 import { getDb } from "./firebase";
-import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder } from "../types";
+import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, FinanceCategoryDefinition } from "../types";
 
 const COLLECTIONS = {
   USERS: 'users',
@@ -24,14 +25,20 @@ const COLLECTIONS = {
   FINANCE: 'finance',
   LOGS: 'logs',
   MATERIALS: 'materials',
-  ORDERS: 'orders'
+  ORDERS: 'orders',
+  CATEGORIES: 'categories'
+};
+
+// Helper to remove undefined fields which Firestore hates
+// Also ensures objects are plain JSON before sending
+const cleanData = <T>(data: T): T => {
+  return JSON.parse(JSON.stringify(data));
 };
 
 export const api = {
   isOnline: () => !!getDb(),
 
   // --- USERS ---
-  // Users rarely change, getDocs is fine, but for status updates (block/approve), snapshot is better.
   subscribeToUsers: (callback: (users: User[]) => void) => {
       const db = getDb();
       if (!db) return () => {};
@@ -49,19 +56,24 @@ export const api = {
   createUser: async (user: User) => {
       const db = getDb();
       if (!db) return;
-      await setDoc(doc(db, COLLECTIONS.USERS, user.id), user);
+      await setDoc(doc(db, COLLECTIONS.USERS, user.id), cleanData(user));
   },
   updateUser: async (user: User) => {
       const db = getDb();
       if (!db) return;
-      await updateDoc(doc(db, COLLECTIONS.USERS, user.id), { ...user });
+      await setDoc(doc(db, COLLECTIONS.USERS, user.id), cleanData(user));
+  },
+  deleteUser: async (id: string) => {
+      const db = getDb();
+      if (!db) return;
+      await deleteDoc(doc(db, COLLECTIONS.USERS, id));
   },
 
   // --- WORKS (OBRAS) ---
   subscribeToWorks: (callback: (works: ConstructionWork[]) => void) => {
       const db = getDb();
       if (!db) return () => {};
-      const q = query(collection(db, COLLECTIONS.WORKS)); // Fetch ALL works to ensure visibility
+      const q = query(collection(db, COLLECTIONS.WORKS));
       return onSnapshot(q, (snap) => {
           callback(snap.docs.map(d => d.data() as ConstructionWork));
       });
@@ -75,20 +87,19 @@ export const api = {
   createWork: async (work: ConstructionWork) => {
       const db = getDb();
       if (!db) return;
-      await setDoc(doc(db, COLLECTIONS.WORKS, work.id), work);
+      await setDoc(doc(db, COLLECTIONS.WORKS, work.id), cleanData(work));
   },
   updateWork: async (work: ConstructionWork) => {
       const db = getDb();
       if (!db) return;
-      await updateDoc(doc(db, COLLECTIONS.WORKS, work.id), { ...work });
+      await setDoc(doc(db, COLLECTIONS.WORKS, work.id), cleanData(work));
   },
   deleteWork: async (id: string) => {
       const db = getDb();
       if (!db) return; 
       
       try {
-          console.log(`Iniciando exclusão da obra: ${id}`);
-          
+          // Cascade Delete Logic
           const tasksQ = query(collection(db, COLLECTIONS.TASKS), where('workId', '==', id));
           const finQ = query(collection(db, COLLECTIONS.FINANCE), where('workId', '==', id));
           const logsQ = query(collection(db, COLLECTIONS.LOGS), where('workId', '==', id));
@@ -105,23 +116,22 @@ export const api = {
           
           await Promise.allSettled(subDeletions);
           await deleteDoc(doc(db, COLLECTIONS.WORKS, id));
-          
-          console.log(`Obra ${id} excluída com sucesso.`);
       } catch (error) {
           console.error("Erro crítico ao excluir obra:", error);
           throw error; 
       }
   },
 
-  // --- TASKS (TAREFAS) ---
-  // "Mural Rule": Tasks are team property. Subscribe to ALL or filter by work in component.
-  // For Dashboard to work (pending tasks count), we need GLOBAL subscription.
+  // --- TASKS ---
   subscribeToTasks: (callback: (tasks: Task[]) => void) => {
       const db = getDb();
       if (!db) return () => {};
       const q = query(collection(db, COLLECTIONS.TASKS)); 
       return onSnapshot(q, (snap) => {
-          callback(snap.docs.map(d => d.data() as Task));
+          const tasks = snap.docs.map(d => d.data() as Task);
+          // Sort client side by dueDate descending (newest first)
+          tasks.sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+          callback(tasks);
       });
   },
   getTasks: async (): Promise<Task[]> => {
@@ -133,12 +143,12 @@ export const api = {
   createTask: async (task: Task) => {
       const db = getDb();
       if (!db) return;
-      await setDoc(doc(db, COLLECTIONS.TASKS, task.id), task);
+      await setDoc(doc(db, COLLECTIONS.TASKS, task.id), cleanData(task));
   },
   updateTask: async (task: Task) => {
       const db = getDb();
       if (!db) return;
-      await updateDoc(doc(db, COLLECTIONS.TASKS, task.id), { ...task });
+      await setDoc(doc(db, COLLECTIONS.TASKS, task.id), cleanData(task));
   },
   deleteTask: async (id: string) => {
       const db = getDb();
@@ -146,8 +156,7 @@ export const api = {
       await deleteDoc(doc(db, COLLECTIONS.TASKS, id));
   },
 
-  // --- FINANCE (FINANCEIRO) ---
-  // "Mural Rule": Finance is project property. Dashboard needs global balance.
+  // --- FINANCE ---
   subscribeToFinance: (callback: (records: FinancialRecord[]) => void) => {
       const db = getDb();
       if (!db) return () => {};
@@ -165,12 +174,12 @@ export const api = {
   createFinance: async (rec: FinancialRecord) => {
       const db = getDb();
       if (!db) return;
-      await setDoc(doc(db, COLLECTIONS.FINANCE, rec.id), rec);
+      await setDoc(doc(db, COLLECTIONS.FINANCE, rec.id), cleanData(rec));
   },
   updateFinance: async (rec: FinancialRecord) => {
       const db = getDb();
       if (!db) return;
-      await updateDoc(doc(db, COLLECTIONS.FINANCE, rec.id), { ...rec });
+      await setDoc(doc(db, COLLECTIONS.FINANCE, rec.id), cleanData(rec));
   },
   deleteFinance: async (id: string) => {
       const db = getDb();
@@ -178,21 +187,16 @@ export const api = {
       await deleteDoc(doc(db, COLLECTIONS.FINANCE, id));
   },
 
-  // --- LOGS (DIÁRIO / INTERCORRÊNCIAS) ---
-  // Optimized: Logs are heavy. We subscribe ONLY when entering a Work context (filtered by workId).
-  // NO AUTHOR FILTER.
+  // --- LOGS ---
   subscribeToWorkLogs: (workId: string, callback: (logs: DailyLog[]) => void) => {
       const db = getDb();
       if (!db) return () => {};
-      
-      const q = query(
-          collection(db, COLLECTIONS.LOGS), 
-          where('workId', '==', workId),
-          orderBy('date', 'desc')
-      );
-      
+      // Sort client-side to avoid index errors
+      const q = query(collection(db, COLLECTIONS.LOGS), where('workId', '==', workId));
       return onSnapshot(q, (snap) => {
-          callback(snap.docs.map(d => d.data() as DailyLog));
+          const logs = snap.docs.map(d => d.data() as DailyLog);
+          logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          callback(logs);
       });
   },
   getLogs: async (): Promise<DailyLog[]> => {
@@ -204,12 +208,12 @@ export const api = {
   createLog: async (log: DailyLog) => {
       const db = getDb();
       if (!db) return;
-      await setDoc(doc(db, COLLECTIONS.LOGS, log.id), log);
+      await setDoc(doc(db, COLLECTIONS.LOGS, log.id), cleanData(log));
   },
   updateLog: async (log: DailyLog) => {
       const db = getDb();
       if (!db) return;
-      await updateDoc(doc(db, COLLECTIONS.LOGS, log.id), { ...log });
+      await setDoc(doc(db, COLLECTIONS.LOGS, log.id), cleanData(log));
   },
   deleteLog: async (id: string) => {
       const db = getDb();
@@ -219,27 +223,21 @@ export const api = {
   getLastLog: async (workId: string): Promise<DailyLog | null> => {
       const db = getDb();
       if (!db) return null;
-      const q = query(collection(db, COLLECTIONS.LOGS), where('workId', '==', workId), orderBy('date', 'desc'), limit(1));
+      const q = query(collection(db, COLLECTIONS.LOGS), where('workId', '==', workId));
       const snap = await getDocs(q);
       if (snap.empty) return null;
-      return snap.docs[0].data() as DailyLog;
+      const logs = snap.docs.map(d => d.data() as DailyLog);
+      logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return logs[0];
   },
 
-  // --- MATERIALS & ORDERS ---
+  // --- MATERIALS ---
   subscribeToMaterials: (callback: (mats: Material[]) => void) => {
       const db = getDb();
       if (!db) return () => {};
       const q = query(collection(db, COLLECTIONS.MATERIALS));
       return onSnapshot(q, (snap) => {
           callback(snap.docs.map(d => d.data() as Material));
-      });
-  },
-  subscribeToOrders: (callback: (orders: MaterialOrder[]) => void) => {
-      const db = getDb();
-      if (!db) return () => {};
-      const q = query(collection(db, COLLECTIONS.ORDERS));
-      return onSnapshot(q, (snap) => {
-          callback(snap.docs.map(d => d.data() as MaterialOrder));
       });
   },
   getMaterials: async (): Promise<Material[]> => {
@@ -251,12 +249,12 @@ export const api = {
   createMaterial: async (mat: Material) => {
       const db = getDb();
       if (!db) return;
-      await setDoc(doc(db, COLLECTIONS.MATERIALS, mat.id), mat);
+      await setDoc(doc(db, COLLECTIONS.MATERIALS, mat.id), cleanData(mat));
   },
   updateMaterial: async (mat: Material) => {
       const db = getDb();
       if (!db) return;
-      await updateDoc(doc(db, COLLECTIONS.MATERIALS, mat.id), { ...mat });
+      await setDoc(doc(db, COLLECTIONS.MATERIALS, mat.id), cleanData(mat));
   },
   deleteMaterial: async (id: string) => {
       const db = getDb();
@@ -264,6 +262,15 @@ export const api = {
       await deleteDoc(doc(db, COLLECTIONS.MATERIALS, id));
   },
 
+  // --- ORDERS ---
+  subscribeToOrders: (callback: (orders: MaterialOrder[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.ORDERS));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as MaterialOrder));
+      });
+  },
   getOrders: async (): Promise<MaterialOrder[]> => {
       const db = getDb();
       if (!db) return [];
@@ -273,12 +280,43 @@ export const api = {
   createOrder: async (order: MaterialOrder) => {
       const db = getDb();
       if (!db) return;
-      await setDoc(doc(db, COLLECTIONS.ORDERS, order.id), order);
+      await setDoc(doc(db, COLLECTIONS.ORDERS, order.id), cleanData(order));
   },
   updateOrder: async (order: MaterialOrder) => {
       const db = getDb();
       if (!db) return;
-      await updateDoc(doc(db, COLLECTIONS.ORDERS, order.id), { ...order });
+      await setDoc(doc(db, COLLECTIONS.ORDERS, order.id), cleanData(order));
+  },
+
+  // --- FINANCE CATEGORIES ---
+  subscribeToCategories: (callback: (cats: FinanceCategoryDefinition[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.CATEGORIES));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as FinanceCategoryDefinition));
+      });
+  },
+  getCategories: async (): Promise<FinanceCategoryDefinition[]> => {
+      const db = getDb();
+      if (!db) return [];
+      const snap = await getDocs(collection(db, COLLECTIONS.CATEGORIES));
+      return snap.docs.map(d => d.data() as FinanceCategoryDefinition);
+  },
+  createCategory: async (cat: FinanceCategoryDefinition) => {
+      const db = getDb();
+      if (!db) return;
+      await setDoc(doc(db, COLLECTIONS.CATEGORIES, cat.id), cleanData(cat));
+  },
+  updateCategory: async (cat: FinanceCategoryDefinition) => {
+      const db = getDb();
+      if (!db) return;
+      await setDoc(doc(db, COLLECTIONS.CATEGORIES, cat.id), cleanData(cat));
+  },
+  deleteCategory: async (id: string) => {
+      const db = getDb();
+      if (!db) return;
+      await deleteDoc(doc(db, COLLECTIONS.CATEGORIES, id));
   },
 
   restoreDefaults: async () => {

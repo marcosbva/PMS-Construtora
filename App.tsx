@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority } from './types';
+import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { KanbanBoard } from './components/KanbanBoard';
 import { FinanceView } from './components/FinanceView';
@@ -7,6 +7,7 @@ import { GlobalTaskList } from './components/GlobalTaskList';
 import { MaterialOrders } from './components/MaterialOrders';
 import { UserManagement } from './components/UserManagement';
 import { DailyLogView } from './components/DailyLog';
+import { Dashboard } from './components/Dashboard';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
 import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle } from 'lucide-react';
@@ -23,6 +24,7 @@ function App() {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
+  const [financeCategories, setFinanceCategories] = useState<FinanceCategoryDefinition[]>(DEFAULT_FINANCE_CATEGORIES);
   const [permissions, setPermissions] = useState<RolePermissionsMap>(DEFAULT_ROLE_PERMISSIONS);
 
   // Navigation State
@@ -38,17 +40,17 @@ function App() {
   const [isSavingWork, setIsSavingWork] = useState(false);
   const [isDeletingWork, setIsDeletingWork] = useState(false);
 
-  // --- REAL-TIME DATA SUBSCRIPTION ---
-  // Replaces the old one-time fetch to ensure "Mural da Obra" visibility (everyone sees everything)
   useEffect(() => {
       if (!api.isOnline()) {
-          // Fallback for offline mode (if needed, or just initial fetch)
+          // Fallback for offline mode
           const loadOfflineData = async () => {
-              const [u, w, t, f, l, m, o] = await Promise.all([
-                  api.getUsers(), api.getWorks(), api.getTasks(), api.getFinance(), api.getLogs(), api.getMaterials(), api.getOrders()
+              const [u, w, t, f, l, m, o, cats] = await Promise.all([
+                  api.getUsers(), api.getWorks(), api.getTasks(), api.getFinance(), 
+                  api.getLogs(), api.getMaterials(), api.getOrders(), api.getCategories()
               ]);
               setUsers(u); setWorks(w); setTasks(t); setFinance(f); setLogs(l); setMaterials(m); setOrders(o);
               if (m.length === 0) setMaterials(DEFAULT_MATERIALS);
+              if (cats.length > 0) setFinanceCategories(cats);
               setIsLoading(false);
           };
           loadOfflineData();
@@ -67,29 +69,25 @@ function App() {
           else setMaterials(mats);
       });
       const unsubOrders = api.subscribeToOrders(setOrders);
+      const unsubCats = api.subscribeToCategories((cats) => {
+          if (cats.length === 0) setFinanceCategories(DEFAULT_FINANCE_CATEGORIES);
+          else setFinanceCategories(cats);
+      });
 
-      // We only stop loading when we get initial data (approximated here by timeout or waiting for all)
-      // For simplicity, we turn off loading after a short delay or immediately since updates are async
       setTimeout(() => setIsLoading(false), 800);
 
       return () => {
-          unsubUsers();
-          unsubWorks();
-          unsubTasks();
-          unsubFinance();
-          unsubMaterials();
-          unsubOrders();
+          unsubUsers(); unsubWorks(); unsubTasks(); unsubFinance(); 
+          unsubMaterials(); unsubOrders(); unsubCats();
       };
   }, []);
 
-  // --- SPECIFIC WORK LOGS SUBSCRIPTION ---
-  // Logs are heavy, so we only subscribe to them when inside a work.
   useEffect(() => {
       if (activeWorkId && api.isOnline()) {
           const unsubLogs = api.subscribeToWorkLogs(activeWorkId, setLogs);
           return () => unsubLogs();
       } else if (!activeWorkId) {
-          setLogs([]); // Clear logs when not in a work
+          setLogs([]); 
       }
   }, [activeWorkId]);
 
@@ -97,7 +95,6 @@ function App() {
   
   const handleRegister = async (user: User) => {
       await api.createUser(user);
-      // setUsers handled by subscription
   };
 
   const handleLogout = () => {
@@ -126,7 +123,6 @@ function App() {
       try {
           if (editingWork.id) {
               await api.updateWork(editingWork);
-              // State updated by subscription
           } else {
               const newWork = { ...editingWork, id: Math.random().toString(36).substr(2, 9) };
               await api.createWork(newWork);
@@ -149,8 +145,6 @@ function App() {
           try {
               await api.deleteWork(id);
               
-              // Optimistic UI updates (Cascade)
-              // Note: If subscription is fast enough, this might be redundant, but good for UX responsiveness
               setWorks(prev => prev.filter(w => w.id !== id));
               setTasks(prev => prev.filter(t => t.workId !== id));
               setFinance(prev => prev.filter(f => f.workId !== id));
@@ -174,19 +168,10 @@ function App() {
       }
   };
 
-  // --- DASHBOARD CALCULATIONS ---
-  const activeWorksList = works.filter(w => w.status === WorkStatus.EXECUTION);
-  const pendingTasksList = tasks.filter(t => t.status !== TaskStatus.DONE);
-  const highPriorityTasks = tasks.filter(t => t.priority === TaskPriority.HIGH && t.status !== TaskStatus.DONE);
-  const totalBalance = finance.reduce((acc, curr) => {
-      return curr.type === FinanceType.INCOME ? acc + curr.amount : acc - curr.amount;
-  }, 0);
-
   if (!currentUser) {
       return <AuthScreen users={users} onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
-  // --- RENDER MAIN LAYOUT ---
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans text-slate-900">
       {/* Sidebar */}
@@ -240,7 +225,6 @@ function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-          {/* Mobile Header */}
           <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-30">
               <div className="flex items-center gap-2">
                   <HardHat size={20} className="text-pms-600" />
@@ -250,110 +234,8 @@ function App() {
           </header>
 
           <div className="flex-1 overflow-auto p-4 md:p-8">
-              {/* DYNAMIC CONTENT SWITCHER */}
-              
               {currentView === 'DASHBOARD' && !activeWorkId && (
-                  <div className="space-y-6 animate-fade-in">
-                      <h2 className="text-2xl font-bold text-slate-800">Visão Geral</h2>
-                      
-                      {/* KPI Cards */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                          {/* Works Card */}
-                          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-                              <div className="p-3 bg-blue-100 text-blue-600 rounded-lg">
-                                  <HardHat size={24} />
-                              </div>
-                              <div>
-                                  <p className="text-sm text-slate-500 font-bold">Obras em Andamento</p>
-                                  <p className="text-2xl font-bold text-slate-800">{activeWorksList.length}</p>
-                              </div>
-                          </div>
-
-                          {/* Tasks Card */}
-                          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-                              <div className="p-3 bg-orange-100 text-orange-600 rounded-lg">
-                                  <Briefcase size={24} />
-                              </div>
-                              <div>
-                                  <p className="text-sm text-slate-500 font-bold">Tarefas Pendentes</p>
-                                  <p className="text-2xl font-bold text-slate-800">{pendingTasksList.length}</p>
-                              </div>
-                          </div>
-
-                          {/* Finance Card */}
-                          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-                              <div className={`p-3 rounded-lg ${totalBalance >= 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                  <DollarSign size={24} />
-                              </div>
-                              <div>
-                                  <p className="text-sm text-slate-500 font-bold">Balanço Global</p>
-                                  <p className={`text-2xl font-bold ${totalBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                      R$ {Math.abs(totalBalance).toLocaleString('pt-BR', { notation: 'compact' })}
-                                  </p>
-                              </div>
-                          </div>
-                           {/* Team Card */}
-                           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center gap-4">
-                              <div className="p-3 bg-purple-100 text-purple-600 rounded-lg">
-                                  <Users size={24} />
-                              </div>
-                              <div>
-                                  <p className="text-sm text-slate-500 font-bold">Equipe Ativa</p>
-                                  <p className="text-2xl font-bold text-slate-800">{users.filter(u => u.status === 'ACTIVE').length}</p>
-                              </div>
-                          </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                          {/* Active Works List */}
-                          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                              <div className="flex justify-between items-center mb-4">
-                                  <h3 className="font-bold text-slate-800 text-lg">Obras Principais</h3>
-                                  <button onClick={() => setCurrentView('WORKS')} className="text-sm text-pms-600 font-bold hover:underline">Ver todas</button>
-                              </div>
-                              <div className="space-y-4">
-                                  {activeWorksList.slice(0, 3).map(work => (
-                                       <div key={work.id} onClick={() => setActiveWorkId(work.id)} className="flex items-center gap-4 p-3 rounded-lg border border-slate-100 hover:border-pms-300 hover:bg-slate-50 cursor-pointer transition-all">
-                                           <div className="w-16 h-16 rounded-lg bg-slate-200 overflow-hidden shrink-0">
-                                               {work.imageUrl ? <img src={work.imageUrl} className="w-full h-full object-cover"/> : <HardHat className="m-auto text-slate-400 mt-4"/>}
-                                           </div>
-                                           <div className="flex-1">
-                                               <h4 className="font-bold text-slate-800">{work.name}</h4>
-                                               <p className="text-xs text-slate-500">{work.address}</p>
-                                               <div className="mt-2 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                                   <div className="bg-pms-600 h-full" style={{width: `${work.progress}%`}}></div>
-                                               </div>
-                                           </div>
-                                           <div className="text-right">
-                                               <span className="text-xs font-bold text-slate-600 block">{work.progress}%</span>
-                                               <span className="text-[10px] text-slate-400">Progresso</span>
-                                           </div>
-                                       </div>
-                                  ))}
-                                  {activeWorksList.length === 0 && <p className="text-slate-400 text-center py-4">Nenhuma obra em execução no momento.</p>}
-                              </div>
-                          </div>
-
-                          {/* Urgent Tasks */}
-                          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                              <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
-                                  <AlertTriangle size={20} className="text-red-500" /> Prioridade Alta
-                              </h3>
-                              <div className="space-y-3">
-                                  {highPriorityTasks.slice(0, 5).map(task => (
-                                      <div key={task.id} className="p-3 bg-red-50 rounded-lg border border-red-100">
-                                           <p className="text-sm font-bold text-slate-800 line-clamp-1">{task.title}</p>
-                                           <div className="flex justify-between items-center mt-2">
-                                               <span className="text-[10px] text-red-600 font-bold bg-white px-2 py-0.5 rounded-full border border-red-100">{task.status}</span>
-                                               <span className="text-[10px] text-slate-500">{works.find(w=>w.id===task.workId)?.name.substring(0, 15)}...</span>
-                                           </div>
-                                      </div>
-                                  ))}
-                                  {highPriorityTasks.length === 0 && <p className="text-slate-400 text-center py-4 text-sm">Nenhuma tarefa crítica pendente. Bom trabalho!</p>}
-                              </div>
-                          </div>
-                      </div>
-                  </div>
+                  <Dashboard />
               )}
 
               {currentView === 'WORKS' && !activeWorkId && (
@@ -396,7 +278,6 @@ function App() {
                   </div>
               )}
 
-              {/* SINGLE WORK VIEW (TABS INSIDE) */}
               {activeWorkId && (
                   <div className="h-full flex flex-col">
                       <div className="flex items-center gap-4 mb-6">
@@ -407,7 +288,6 @@ function App() {
                           </h2>
                       </div>
                       
-                      {/* Tabs for Work */}
                       <div className="flex border-b border-slate-200 mb-4 overflow-x-auto">
                           {['KANBAN', 'DIARIO', 'FINANCEIRO'].map(tab => (
                               <button 
@@ -420,7 +300,7 @@ function App() {
                           ))}
                       </div>
 
-                      <div className="flex-1 overflow-hidden">
+                      <div className={`flex-1 ${currentView === 'KANBAN' ? 'overflow-hidden' : 'overflow-y-auto custom-scroll'}`}>
                           {currentView === 'KANBAN' && (
                               <KanbanBoard 
                                 workId={activeWorkId}
@@ -428,25 +308,20 @@ function App() {
                                 users={users}
                                 currentUser={currentUser}
                                 taskStatuses={DEFAULT_TASK_STATUSES}
-                                onAddTask={(t) => { 
-                                    // Subscription handles state update
-                                    api.createTask(t); 
-                                }}
-                                onUpdateTask={(t) => { 
-                                    api.updateTask(t); 
-                                }}
+                                onAddTask={(t) => api.createTask(t)}
+                                onUpdateTask={(t) => api.updateTask(t)}
                               />
                           )}
                           {currentView === 'DIARIO' && (
                               <DailyLogView 
                                 workId={activeWorkId}
-                                logs={logs} // logs already filtered by activeWorkId in useEffect
+                                logs={logs} 
                                 users={users}
                                 tasks={tasks.filter(t => t.workId === activeWorkId)}
                                 currentUser={currentUser}
-                                onAddLog={(l) => { api.createLog(l); }}
-                                onUpdateLog={(l) => { api.updateLog(l); }}
-                                onDeleteLog={(id) => { api.deleteLog(id); }}
+                                onAddLog={(l) => api.createLog(l)}
+                                onUpdateLog={(l) => api.updateLog(l)}
+                                onDeleteLog={(id) => api.deleteLog(id)}
                               />
                           )}
                           {currentView === 'FINANCEIRO' && (
@@ -455,26 +330,26 @@ function App() {
                                 records={finance.filter(f => f.workId === activeWorkId)}
                                 users={users}
                                 currentUser={currentUser}
-                                financeCategories={DEFAULT_FINANCE_CATEGORIES}
-                                onAddRecord={(r) => { api.createFinance(r); }}
-                                onUpdateRecord={(r) => { api.updateFinance(r); }}
-                                onDeleteRecord={(id) => { api.deleteFinance(id); }}
+                                financeCategories={financeCategories}
+                                onAddRecord={(r) => api.createFinance(r)}
+                                onUpdateRecord={(r) => api.updateFinance(r)}
+                                onDeleteRecord={(id) => api.deleteFinance(id)}
+                                onAddCategory={(c) => api.createCategory(c)}
                               />
                           )}
                       </div>
                   </div>
               )}
 
-              {/* GLOBAL VIEWS */}
               {currentView === 'TASKS' && !activeWorkId && (
                   <GlobalTaskList 
                     tasks={tasks} 
                     works={works} 
                     users={users} 
                     taskStatuses={DEFAULT_TASK_STATUSES}
-                    onAddTask={(t) => { api.createTask(t); }}
-                    onUpdateTask={(t) => { api.updateTask(t); }}
-                    onDeleteTask={(id) => { api.deleteTask(id); }}
+                    onAddTask={(t) => api.createTask(t)}
+                    onUpdateTask={(t) => api.updateTask(t)}
+                    onDeleteTask={(id) => api.deleteTask(id)}
                   />
               )}
               {currentView === 'FINANCE' && !activeWorkId && (
@@ -482,10 +357,11 @@ function App() {
                     records={finance} 
                     users={users} 
                     currentUser={currentUser} 
-                    financeCategories={DEFAULT_FINANCE_CATEGORIES}
-                    onAddRecord={(r) => { api.createFinance(r); }}
-                    onUpdateRecord={(r) => { api.updateFinance(r); }}
-                    onDeleteRecord={(id) => { api.deleteFinance(id); }}
+                    financeCategories={financeCategories}
+                    onAddRecord={(r) => api.createFinance(r)}
+                    onUpdateRecord={(r) => api.updateFinance(r)}
+                    onDeleteRecord={(id) => api.deleteFinance(id)}
+                    onAddCategory={(c) => api.createCategory(c)}
                   />
               )}
               {currentView === 'MATERIALS' && !activeWorkId && (
@@ -496,8 +372,8 @@ function App() {
                     users={users}
                     materials={materials}
                     currentUser={currentUser}
-                    onAddOrder={(o) => { api.createOrder(o); }}
-                    onUpdateOrder={(o) => { api.updateOrder(o); }}
+                    onAddOrder={(o) => api.createOrder(o)}
+                    onUpdateOrder={(o) => api.updateOrder(o)}
                     onOpenMaterialCatalog={() => setCurrentView('TEAM')}
                   />
               )}
@@ -508,14 +384,17 @@ function App() {
                     materials={materials}
                     orders={orders}
                     taskStatuses={DEFAULT_TASK_STATUSES}
-                    financeCategories={DEFAULT_FINANCE_CATEGORIES}
+                    financeCategories={financeCategories}
                     permissions={permissions}
-                    onAddUser={(u) => { api.createUser(u); }}
-                    onUpdateUser={(u) => { api.updateUser(u); }}
-                    onDeleteUser={(id) => { /* Implement User Delete via API if needed */ }}
-                    onAddMaterial={(m) => { api.createMaterial(m); }}
-                    onUpdateMaterial={(m) => { api.updateMaterial(m); }}
-                    onDeleteMaterial={(id) => { api.deleteMaterial(id); }}
+                    onAddUser={(u) => api.createUser(u)}
+                    onUpdateUser={(u) => api.updateUser(u)}
+                    onDeleteUser={(id) => api.deleteUser(id)}
+                    onAddMaterial={(m) => api.createMaterial(m)}
+                    onUpdateMaterial={(m) => api.updateMaterial(m)}
+                    onDeleteMaterial={(id) => api.deleteMaterial(id)}
+                    onAddCategory={(c) => api.createCategory(c)}
+                    onUpdateCategory={(c) => api.updateCategory(c)}
+                    onDeleteCategory={(id) => api.deleteCategory(id)}
                     onUpdateStatuses={() => {}}
                     onUpdatePermissions={setPermissions}
                   />
@@ -523,7 +402,6 @@ function App() {
           </div>
       </main>
 
-      {/* EDIT WORK MODAL */}
       {isEditWorkModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
             <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -535,7 +413,7 @@ function App() {
                         <X size={24} />
                     </button>
                 </div>
-
+                {/* Form Content Omitted for brevity, logic handled in handler above */}
                 <div className="space-y-4 overflow-y-auto max-h-[70vh] px-1">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Obra</label>
@@ -624,7 +502,6 @@ function App() {
                             onClick={() => handleDeleteWork(editingWork.id)}
                             disabled={isSavingWork || isDeletingWork}
                             className="mr-auto text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
-                            title="Excluir permanentemente"
                         >
                             {isDeletingWork ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                             <span className="hidden sm:inline">{isDeletingWork ? 'Excluindo...' : 'Excluir'}</span>
