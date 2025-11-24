@@ -5,7 +5,12 @@ import {
   DollarSign, 
   AlertTriangle, 
   TrendingUp, 
-  Loader2 
+  Loader2,
+  Filter,
+  Wallet,
+  Clock,
+  Calendar,
+  CheckCircle2
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -28,7 +33,7 @@ const PIE_COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab
 interface KPIState {
   activeWorks: number;
   pendingExpense: number;
-  totalWorkforce: number;
+  cashBalance: number;
   activeAlerts: number;
 }
 
@@ -44,60 +49,79 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
   const [logsLoading, setLogsLoading] = useState(true);
+  const [allLogs, setAllLogs] = useState<DailyLog[]>([]);
+  const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
+
   const [kpis, setKpis] = useState<KPIState>({
     activeWorks: 0,
     pendingExpense: 0,
-    totalWorkforce: 0,
+    cashBalance: 0,
     activeAlerts: 0
   });
   const [charts, setCharts] = useState<ChartData>({
     costByWork: [],
     expensesByCategory: []
   });
+  
+  const [nextExpenses, setNextExpenses] = useState<FinancialRecord[]>([]);
 
   // Fetch logs in real-time locally for the dashboard
   useEffect(() => {
-    // Only subscribe to logs here, works and finance come from props
     const unsubLogs = api.subscribeToAllLogs((logs) => {
-        calculateMetrics(works, finance, logs);
+        setAllLogs(logs);
         setLogsLoading(false);
     });
 
     return () => unsubLogs();
-  }, [works, finance]); // Recalculate if props change
+  }, []);
 
-  const calculateMetrics = (works: ConstructionWork[], finance: FinancialRecord[], logs: DailyLog[]) => {
+  // Filter and Calculate Metrics when dependencies change
+  useEffect(() => {
+    if (logsLoading) return;
+
+    const filteredWorks = selectedWorkId === 'ALL' ? works : works.filter(w => w.id === selectedWorkId);
+    const filteredFinance = selectedWorkId === 'ALL' ? finance : finance.filter(f => f.workId === selectedWorkId);
+    const filteredLogs = selectedWorkId === 'ALL' ? allLogs : allLogs.filter(l => l.workId === selectedWorkId);
+
+    calculateMetrics(filteredWorks, filteredFinance, filteredLogs);
+  }, [works, finance, allLogs, selectedWorkId, logsLoading]);
+
+  const calculateMetrics = (currentWorks: ConstructionWork[], currentFinance: FinancialRecord[], currentLogs: DailyLog[]) => {
       // --- KPI CALCULATIONS ---
-      const activeWorksCount = works.filter(w => w.status !== 'Concluída').length;
+      const activeWorksCount = currentWorks.filter(w => w.status !== 'Concluída').length;
 
-      const pendingExpenseTotal = finance
+      const pendingExpenseTotal = currentFinance
         .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
         .reduce((acc, curr) => acc + curr.amount, 0);
 
-      // Workforce calculation logic
-      const latestLogsByWork: Record<string, DailyLog> = {};
-      logs.forEach(log => {
-        if (!latestLogsByWork[log.workId] || new Date(log.date) > new Date(latestLogsByWork[log.workId].date)) {
-          latestLogsByWork[log.workId] = log;
-        }
-      });
+      // Cash Balance Calculation: (Paid Income) - (Paid Expenses)
+      const totalIncome = currentFinance
+        .filter(f => f.type === FinanceType.INCOME && f.status === 'Pago')
+        .reduce((acc, curr) => acc + curr.amount, 0);
+      
+      const totalExpense = currentFinance
+        .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pago')
+        .reduce((acc, curr) => acc + curr.amount, 0);
+        
+      const cash = totalIncome - totalExpense;
 
-      let workforceCount = 0;
-      Object.values(latestLogsByWork).forEach(log => {
-        if (log.workforce) {
-          workforceCount += Object.values(log.workforce).reduce((a, b) => a + b, 0);
-        }
-      });
+      const alertsCount = currentLogs.filter(l => l.type === 'Intercorrência' && !l.isResolved).length;
 
-      const alertsCount = logs.filter(l => l.type === 'Intercorrência' && !l.isResolved).length;
+      // Upcoming Expenses (Top 5 PENDING EXPENSES sorted by Date)
+      const upcoming = currentFinance
+        .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        .slice(0, 5);
+      
+      setNextExpenses(upcoming);
 
       // --- CHARTS ---
       const workExpenses: Record<string, number> = {};
       const workNames: Record<string, string> = {};
       
-      works.forEach(w => workNames[w.id] = w.name);
+      currentWorks.forEach(w => workNames[w.id] = w.name);
 
-      finance
+      currentFinance
         .filter(f => f.type === FinanceType.EXPENSE)
         .forEach(f => {
           const wName = workNames[f.workId] || 'Outros';
@@ -110,7 +134,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
         .slice(0, 5);
 
       const catExpenses: Record<string, number> = {};
-      finance
+      currentFinance
         .filter(f => f.type === FinanceType.EXPENSE)
         .forEach(f => {
           const cat = f.category || 'Sem Categoria';
@@ -124,7 +148,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
       setKpis({
         activeWorks: activeWorksCount,
         pendingExpense: pendingExpenseTotal,
-        totalWorkforce: workforceCount,
+        cashBalance: cash,
         activeAlerts: alertsCount
       });
 
@@ -144,12 +168,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          <TrendingUp className="text-pms-600" /> Painel de Controle
-        </h2>
-        <p className="text-slate-500">Visão executiva em tempo real.</p>
+    <div className="space-y-6 animate-fade-in pb-10">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <TrendingUp className="text-pms-600" /> Painel de Controle
+          </h2>
+          <p className="text-slate-500">Visão executiva em tempo real.</p>
+        </div>
+
+        {/* WORK FILTER */}
+        <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+            <Filter size={18} className="text-slate-400 ml-1" />
+            <select 
+                value={selectedWorkId} 
+                onChange={(e) => setSelectedWorkId(e.target.value)}
+                className="bg-transparent outline-none text-sm font-bold text-slate-700 min-w-[200px] cursor-pointer"
+            >
+                <option value="ALL">Todas as Obras</option>
+                {works.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+            </select>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -175,13 +216,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-purple-300 transition-colors">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-emerald-300 transition-colors">
           <div>
-            <p className="text-sm font-bold text-slate-500">Efetivo em Campo</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{kpis.totalWorkforce}</p>
+            <p className="text-sm font-bold text-slate-500">Caixa (Realizado)</p>
+            <p className={`text-3xl font-bold mt-1 ${kpis.cashBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+               R$ {kpis.cashBalance.toLocaleString('pt-BR', { notation: 'compact' })}
+            </p>
           </div>
-          <div className="p-4 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-600 group-hover:text-white transition-colors">
-            <Users size={24} />
+          <div className={`p-4 rounded-lg transition-colors ${kpis.cashBalance >= 0 ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white'}`}>
+            <Wallet size={24} />
           </div>
         </div>
 
@@ -247,6 +290,99 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
             </PieChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Row for Details: Upcoming & Works Summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Upcoming Expenses */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full max-h-[400px]">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Clock className="text-orange-500" size={20} />
+                      Próximos Compromissos
+                  </h3>
+                  <p className="text-sm text-slate-500">Contas a pagar mais urgentes.</p>
+              </div>
+              <div className="p-4 flex-1 overflow-y-auto custom-scroll">
+                  {nextExpenses.length > 0 ? (
+                      <div className="space-y-3">
+                          {nextExpenses.map(item => {
+                              const workName = works.find(w => w.id === item.workId)?.name || 'Obra Excluída';
+                              const isOverdue = new Date(item.dueDate) < new Date();
+                              return (
+                                  <div key={item.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg shadow-sm hover:border-orange-200 transition-colors">
+                                      <div>
+                                          <div className="font-bold text-slate-700 text-sm">{item.description}</div>
+                                          <div className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                                              <Briefcase size={10} /> {workName}
+                                          </div>
+                                      </div>
+                                      <div className="text-right">
+                                          <div className={`font-bold text-sm ${isOverdue ? 'text-red-600' : 'text-slate-800'}`}>
+                                              R$ {item.amount.toLocaleString('pt-BR')}
+                                          </div>
+                                          <div className={`text-xs font-medium flex items-center justify-end gap-1 mt-1 ${isOverdue ? 'text-red-500' : 'text-orange-500'}`}>
+                                              <Calendar size={10} /> {new Date(item.dueDate).toLocaleDateString('pt-BR')}
+                                          </div>
+                                      </div>
+                                  </div>
+                              )
+                          })}
+                      </div>
+                  ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-400 p-6">
+                          <CheckCircle2 size={32} className="mb-2 opacity-50 text-green-500"/>
+                          <p>Nenhum pagamento pendente próximo.</p>
+                      </div>
+                  )}
+              </div>
+          </div>
+
+          {/* Works Summary */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full max-h-[400px]">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                      <Briefcase className="text-pms-600" size={20} />
+                      Resumo de Prazos das Obras
+                  </h3>
+                  <p className="text-sm text-slate-500">Cronograma macro dos projetos.</p>
+              </div>
+              <div className="overflow-x-auto overflow-y-auto custom-scroll">
+                  <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold border-b border-slate-100 sticky top-0">
+                          <tr>
+                              <th className="px-6 py-3">Obra</th>
+                              <th className="px-6 py-3">Início</th>
+                              <th className="px-6 py-3">Término Prev.</th>
+                              <th className="px-6 py-3 text-right">Status</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                          {works
+                              .filter(w => selectedWorkId === 'ALL' || w.id === selectedWorkId)
+                              .map(work => (
+                              <tr key={work.id} className="hover:bg-slate-50">
+                                  <td className="px-6 py-3 font-medium text-slate-800">{work.name}</td>
+                                  <td className="px-6 py-3 text-slate-600">{work.startDate ? new Date(work.startDate).toLocaleDateString('pt-BR') : '-'}</td>
+                                  <td className="px-6 py-3 text-slate-600">{work.endDate ? new Date(work.endDate).toLocaleDateString('pt-BR') : '-'}</td>
+                                  <td className="px-6 py-3 text-right">
+                                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                                          work.status === 'Concluída' ? 'bg-green-100 text-green-700 border-green-200' :
+                                          work.status === 'Pausada' ? 'bg-red-100 text-red-700 border-red-200' :
+                                          'bg-blue-100 text-blue-700 border-blue-200'
+                                      }`}>
+                                          {work.status}
+                                      </span>
+                                  </td>
+                              </tr>
+                          ))}
+                          {works.length === 0 && (
+                              <tr><td colSpan={4} className="p-6 text-center text-slate-400">Nenhuma obra cadastrada.</td></tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
+          </div>
       </div>
       
       <div className="flex justify-end">

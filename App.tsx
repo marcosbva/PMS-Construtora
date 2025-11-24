@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -8,6 +9,7 @@ import { MaterialOrders } from './components/MaterialOrders';
 import { UserManagement } from './components/UserManagement';
 import { DailyLogView } from './components/DailyLog';
 import { Dashboard } from './components/Dashboard';
+import { WorkOverview } from './components/WorkOverview';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
 import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle } from 'lucide-react';
@@ -168,6 +170,12 @@ function App() {
       }
   };
 
+  // Helper to open a specific work view
+  const handleOpenWork = (workId: string) => {
+      setActiveWorkId(workId);
+      setCurrentView('RESUMO'); // Default to Summary View
+  };
+
   if (!currentUser) {
       return <AuthScreen users={users} onLogin={handleLogin} onRegister={handleRegister} />;
   }
@@ -248,7 +256,7 @@ function App() {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {works.map(work => (
-                              <div key={work.id} className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all border border-slate-200 overflow-hidden group cursor-pointer" onClick={() => setActiveWorkId(work.id)}>
+                              <div key={work.id} className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all border border-slate-200 overflow-hidden group cursor-pointer" onClick={() => handleOpenWork(work.id)}>
                                   <div className="h-40 bg-slate-200 relative">
                                       {work.imageUrl && <img src={work.imageUrl} alt={work.name} className="w-full h-full object-cover" />}
                                       <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex flex-col justify-end p-4">
@@ -289,18 +297,26 @@ function App() {
                       </div>
                       
                       <div className="flex border-b border-slate-200 mb-4 overflow-x-auto">
-                          {['KANBAN', 'DIARIO', 'FINANCEIRO'].map(tab => (
+                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO'].map(tab => (
                               <button 
                                 key={tab}
                                 onClick={() => setCurrentView(tab)}
                                 className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${currentView === tab ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                               >
-                                  {tab === 'KANBAN' ? 'Tarefas & Kanban' : tab === 'DIARIO' ? 'Diário de Obra' : 'Financeiro'}
+                                  {tab === 'RESUMO' ? 'Visão Geral' : tab === 'KANBAN' ? 'Tarefas & Kanban' : tab === 'DIARIO' ? 'Diário de Obra' : 'Financeiro'}
                               </button>
                           ))}
                       </div>
 
                       <div className={`flex-1 ${currentView === 'KANBAN' ? 'overflow-hidden' : 'overflow-y-auto custom-scroll'}`}>
+                          {currentView === 'RESUMO' && (
+                              <WorkOverview 
+                                work={works.find(w => w.id === activeWorkId)!}
+                                users={users}
+                                onUpdateWork={(w) => api.updateWork(w)}
+                                onDeleteWork={handleDeleteWork}
+                              />
+                          )}
                           {currentView === 'KANBAN' && (
                               <KanbanBoard 
                                 workId={activeWorkId}
