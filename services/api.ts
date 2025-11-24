@@ -1,4 +1,3 @@
-
 import { 
   collection, 
   getDocs, 
@@ -188,6 +187,17 @@ export const api = {
   },
 
   // --- LOGS ---
+  subscribeToAllLogs: (callback: (logs: DailyLog[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.LOGS));
+      return onSnapshot(q, (snap) => {
+          const logs = snap.docs.map(d => d.data() as DailyLog);
+          // Sort by date desc
+          logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          callback(logs);
+      });
+  },
   subscribeToWorkLogs: (workId: string, callback: (logs: DailyLog[]) => void) => {
       const db = getDb();
       if (!db) return () => {};

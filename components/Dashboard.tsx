@@ -20,8 +20,7 @@ import {
   Cell, 
   Legend 
 } from 'recharts';
-import { collection, getDocs } from 'firebase/firestore';
-import { getDb } from '../services/firebase';
+import { api } from '../services/api';
 import { ConstructionWork, FinancialRecord, DailyLog, FinanceType } from '../types';
 
 const PIE_COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308'];
@@ -38,8 +37,13 @@ interface ChartData {
   expensesByCategory: { name: string; value: number }[];
 }
 
-export const Dashboard: React.FC = () => {
-  const [loading, setLoading] = useState(true);
+interface DashboardProps {
+  works: ConstructionWork[];
+  finance: FinancialRecord[];
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
+  const [logsLoading, setLogsLoading] = useState(true);
   const [kpis, setKpis] = useState<KPIState>({
     activeWorks: 0,
     pendingExpense: 0,
@@ -51,105 +55,90 @@ export const Dashboard: React.FC = () => {
     expensesByCategory: []
   });
 
+  // Fetch logs in real-time locally for the dashboard
   useEffect(() => {
-    const fetchData = async () => {
-      const db = getDb();
-      if (!db) return;
+    // Only subscribe to logs here, works and finance come from props
+    const unsubLogs = api.subscribeToAllLogs((logs) => {
+        calculateMetrics(works, finance, logs);
+        setLogsLoading(false);
+    });
 
-      try {
-        setLoading(true);
+    return () => unsubLogs();
+  }, [works, finance]); // Recalculate if props change
 
-        const [worksSnap, financeSnap, logsSnap] = await Promise.all([
-          getDocs(collection(db, 'works')),
-          getDocs(collection(db, 'finance')),
-          getDocs(collection(db, 'logs'))
-        ]);
+  const calculateMetrics = (works: ConstructionWork[], finance: FinancialRecord[], logs: DailyLog[]) => {
+      // --- KPI CALCULATIONS ---
+      const activeWorksCount = works.filter(w => w.status !== 'Concluída').length;
 
-        const works = worksSnap.docs.map(d => ({ id: d.id, ...d.data() })) as ConstructionWork[];
-        const finance = financeSnap.docs.map(d => d.data()) as FinancialRecord[];
-        const logs = logsSnap.docs.map(d => d.data()) as DailyLog[];
+      const pendingExpenseTotal = finance
+        .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
+        .reduce((acc, curr) => acc + curr.amount, 0);
 
-        // --- KPI CALCULATIONS ---
-        const activeWorksCount = works.filter(w => w.status !== 'Concluída').length;
+      // Workforce calculation logic
+      const latestLogsByWork: Record<string, DailyLog> = {};
+      logs.forEach(log => {
+        if (!latestLogsByWork[log.workId] || new Date(log.date) > new Date(latestLogsByWork[log.workId].date)) {
+          latestLogsByWork[log.workId] = log;
+        }
+      });
 
-        const pendingExpenseTotal = finance
-          .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
-          .reduce((acc, curr) => acc + curr.amount, 0);
+      let workforceCount = 0;
+      Object.values(latestLogsByWork).forEach(log => {
+        if (log.workforce) {
+          workforceCount += Object.values(log.workforce).reduce((a, b) => a + b, 0);
+        }
+      });
 
-        // Workforce calculation logic
-        const latestLogsByWork: Record<string, DailyLog> = {};
-        logs.forEach(log => {
-          if (!latestLogsByWork[log.workId] || new Date(log.date) > new Date(latestLogsByWork[log.workId].date)) {
-            latestLogsByWork[log.workId] = log;
-          }
+      const alertsCount = logs.filter(l => l.type === 'Intercorrência' && !l.isResolved).length;
+
+      // --- CHARTS ---
+      const workExpenses: Record<string, number> = {};
+      const workNames: Record<string, string> = {};
+      
+      works.forEach(w => workNames[w.id] = w.name);
+
+      finance
+        .filter(f => f.type === FinanceType.EXPENSE)
+        .forEach(f => {
+          const wName = workNames[f.workId] || 'Outros';
+          workExpenses[wName] = (workExpenses[wName] || 0) + f.amount;
         });
 
-        let workforceCount = 0;
-        Object.values(latestLogsByWork).forEach(log => {
-          if (log.workforce) {
-            workforceCount += Object.values(log.workforce).reduce((a, b) => a + b, 0);
-          }
+      const costByWorkData = Object.entries(workExpenses)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+
+      const catExpenses: Record<string, number> = {};
+      finance
+        .filter(f => f.type === FinanceType.EXPENSE)
+        .forEach(f => {
+          const cat = f.category || 'Sem Categoria';
+          catExpenses[cat] = (catExpenses[cat] || 0) + f.amount;
         });
 
-        const alertsCount = logs.filter(l => l.type === 'Intercorrência' && !l.isResolved).length;
+      const expensesByCategoryData = Object.entries(catExpenses)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
 
-        // --- CHARTS ---
-        const workExpenses: Record<string, number> = {};
-        const workNames: Record<string, string> = {};
-        
-        works.forEach(w => workNames[w.id] = w.name);
+      setKpis({
+        activeWorks: activeWorksCount,
+        pendingExpense: pendingExpenseTotal,
+        totalWorkforce: workforceCount,
+        activeAlerts: alertsCount
+      });
 
-        finance
-          .filter(f => f.type === FinanceType.EXPENSE)
-          .forEach(f => {
-            const wName = workNames[f.workId] || 'Outros';
-            workExpenses[wName] = (workExpenses[wName] || 0) + f.amount;
-          });
+      setCharts({
+        costByWork: costByWorkData,
+        expensesByCategory: expensesByCategoryData
+      });
+  };
 
-        const costByWorkData = Object.entries(workExpenses)
-          .map(([name, value]) => ({ name, value }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 5);
-
-        const catExpenses: Record<string, number> = {};
-        finance
-          .filter(f => f.type === FinanceType.EXPENSE)
-          .forEach(f => {
-            const cat = f.category || 'Sem Categoria';
-            catExpenses[cat] = (catExpenses[cat] || 0) + f.amount;
-          });
-
-        const expensesByCategoryData = Object.entries(catExpenses)
-          .map(([name, value]) => ({ name, value }))
-          .sort((a, b) => b.value - a.value);
-
-        setKpis({
-          activeWorks: activeWorksCount,
-          pendingExpense: pendingExpenseTotal,
-          totalWorkforce: workforceCount,
-          activeAlerts: alertsCount
-        });
-
-        setCharts({
-          costByWork: costByWorkData,
-          expensesByCategory: expensesByCategoryData
-        });
-
-      } catch (error) {
-        console.error("Erro ao carregar Dashboard:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  if (loading) {
+  if (logsLoading && works.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-slate-400">
         <Loader2 size={40} className="animate-spin mb-4 text-pms-600" />
-        <p>Carregando inteligência de dados...</p>
+        <p>Sincronizando dados em tempo real...</p>
       </div>
     );
   }
@@ -262,7 +251,7 @@ export const Dashboard: React.FC = () => {
       
       <div className="flex justify-end">
           <p className="text-xs text-slate-400 italic flex items-center gap-1">
-             <TrendingUp size={12}/> Dados atualizados em tempo real do banco de dados.
+             <TrendingUp size={12}/> Dados atualizados em tempo real.
           </p>
       </div>
     </div>

@@ -235,7 +235,7 @@ function App() {
 
           <div className="flex-1 overflow-auto p-4 md:p-8">
               {currentView === 'DASHBOARD' && !activeWorkId && (
-                  <Dashboard />
+                  <Dashboard works={works} finance={finance} />
               )}
 
               {currentView === 'WORKS' && !activeWorkId && (
