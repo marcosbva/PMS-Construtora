@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { Task, TaskStatusDefinition, TaskPriority, User, TaskStatus } from '../types';
-import { AlertCircle, BrainCircuit, Plus } from 'lucide-react';
+import { AlertCircle, BrainCircuit, Plus, Edit2 } from 'lucide-react';
 import { analyzeTaskContent } from '../services/geminiService';
 
 interface KanbanBoardProps {
@@ -27,6 +28,9 @@ const getColorClasses = (scheme: string) => {
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentUser, taskStatuses, onUpdateTask, onAddTask, workId }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  
+  // Form State
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -44,32 +48,59 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
     onUpdateTask(updatedTask);
   };
 
-  const handleCreateTask = async () => {
+  const openCreateModal = () => {
+      setEditingTask(null);
+      setNewTaskTitle('');
+      setNewTaskDesc('');
+      setIsModalOpen(true);
+  };
+
+  const openEditModal = (task: Task) => {
+      setEditingTask(task);
+      setNewTaskTitle(task.title);
+      setNewTaskDesc(task.description);
+      setIsModalOpen(true);
+  };
+
+  const handleSaveTask = async () => {
     if (!newTaskTitle) return;
 
-    setIsAnalyzing(true);
-    
-    // AI Analysis for priority and NC detection
-    const aiResult = await analyzeTaskContent(newTaskTitle, newTaskDesc);
-    
-    const newTask: Task = {
-      id: Math.random().toString(36).substr(2, 9),
-      workId,
-      title: newTaskTitle,
-      description: newTaskDesc,
-      status: aiResult.isNC ? TaskStatus.NC : TaskStatus.BACKLOG,
-      priority: aiResult.priority as TaskPriority,
-      assignedTo: currentUser.id,
-      dueDate: new Date().toISOString().split('T')[0],
-      images: [],
-      aiAnalysis: aiResult.summary
-    };
+    if (editingTask) {
+        // Edit Mode
+        const updatedTask: Task = {
+            ...editingTask,
+            title: newTaskTitle,
+            description: newTaskDesc
+        };
+        onUpdateTask(updatedTask);
+        setIsModalOpen(false);
+    } else {
+        // Create Mode
+        setIsAnalyzing(true);
+        
+        // AI Analysis for priority and NC detection
+        const aiResult = await analyzeTaskContent(newTaskTitle, newTaskDesc);
+        
+        const newTask: Task = {
+          id: Math.random().toString(36).substr(2, 9),
+          workId,
+          title: newTaskTitle,
+          description: newTaskDesc,
+          status: aiResult.isNC ? TaskStatus.NC : TaskStatus.BACKLOG,
+          priority: aiResult.priority as TaskPriority,
+          assignedTo: currentUser.id,
+          dueDate: new Date().toISOString().split('T')[0],
+          images: [],
+          aiAnalysis: aiResult.summary
+        };
 
-    onAddTask(newTask);
+        onAddTask(newTask);
+        setIsAnalyzing(false);
+        setIsModalOpen(false);
+    }
+    
     setNewTaskTitle('');
     setNewTaskDesc('');
-    setIsModalOpen(false);
-    setIsAnalyzing(false);
   };
 
   const isClient = currentUser.category === 'CLIENT';
@@ -81,7 +112,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
         {/* Hide button for Clients */}
         {!isClient && (
             <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={openCreateModal}
             className="flex items-center gap-2 bg-pms-600 text-white px-4 py-2 rounded-lg hover:bg-pms-500 transition-colors w-full md:w-auto justify-center shadow-md"
             >
             <Plus size={20} />
@@ -118,9 +149,20 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
                         }`}>
                           {task.priority}
                         </span>
-                        {task.status === TaskStatus.NC && (
-                          <AlertCircle size={16} className="text-red-500" />
-                        )}
+                        <div className="flex gap-2">
+                            {task.status === TaskStatus.NC && (
+                            <AlertCircle size={16} className="text-red-500" />
+                            )}
+                            {!isClient && (
+                                <button 
+                                    onClick={() => openEditModal(task)}
+                                    className="text-slate-400 hover:text-pms-600 p-0.5"
+                                    title="Editar Tarefa"
+                                >
+                                    <Edit2 size={14} />
+                                </button>
+                            )}
+                        </div>
                       </div>
 
                       <h4 className="font-semibold text-slate-800 text-sm mb-1 line-clamp-2">{task.title}</h4>
@@ -163,11 +205,11 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
         </div>
       </div>
 
-      {/* Create Task Modal */}
+      {/* Create/Edit Task Modal */}
       {isModalOpen && !isClient && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl">
-            <h3 className="text-lg font-bold mb-4">Nova Tarefa</h3>
+            <h3 className="text-lg font-bold mb-4">{editingTask ? 'Editar Tarefa' : 'Nova Tarefa'}</h3>
             <input 
               type="text" 
               placeholder="Título da Tarefa"
@@ -191,7 +233,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
                 Cancelar
               </button>
               <button 
-                onClick={handleCreateTask}
+                onClick={handleSaveTask}
                 disabled={isAnalyzing || !newTaskTitle}
                 className="px-4 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 flex items-center gap-2 disabled:opacity-50"
               >
@@ -200,7 +242,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
                     <BrainCircuit className="animate-pulse" size={18} />
                     Analisando...
                    </>
-                ) : 'Criar Tarefa'}
+                ) : (editingTask ? 'Salvar Alterações' : 'Criar Tarefa')}
               </button>
             </div>
           </div>

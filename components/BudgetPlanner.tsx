@@ -1,16 +1,17 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { ConstructionWork, WorkBudget, BudgetCategory, BudgetItem } from '../types';
+import { ConstructionWork, WorkBudget, BudgetCategory, BudgetItem, Task, TaskStatus, TaskPriority } from '../types';
 import { api } from '../services/api';
 import { generateBudgetStructure } from '../services/geminiService';
 import { Calculator, Plus, Save, BrainCircuit, ChevronDown, ChevronRight, Trash2, Download, RefreshCw, Loader2, DollarSign, FileSpreadsheet, LayoutList, X, FileText } from 'lucide-react';
 
 interface BudgetPlannerProps {
     works: ConstructionWork[];
+    activeWorkId?: string; // Optional: If provided, locks the view to this work
 }
 
-export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works }) => {
-    const [selectedWorkId, setSelectedWorkId] = useState<string>('');
+export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkId }) => {
+    const [selectedWorkId, setSelectedWorkId] = useState<string>(activeWorkId || '');
     const [budget, setBudget] = useState<WorkBudget | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -21,6 +22,13 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works }) => {
     const [aiScopeText, setAiScopeText] = useState('');
 
     const selectedWork = works.find(w => w.id === selectedWorkId);
+
+    // Sync with prop if it changes
+    useEffect(() => {
+        if (activeWorkId) {
+            setSelectedWorkId(activeWorkId);
+        }
+    }, [activeWorkId]);
 
     // Load Budget when Work is selected
     useEffect(() => {
@@ -103,7 +111,33 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works }) => {
             const allExpanded = aiCategories.reduce((acc, cat) => ({...acc, [cat.id]: true}), {});
             setExpandedCategories(allExpanded);
             
+            // --- AUTO CREATE TASKS FOR KANBAN ---
+            // For each macro category generated, create a Task in Planning
+            const tasksPromises = aiCategories.map(cat => {
+                // Build a structured list (table-like) of items for the description
+                const itemsTable = cat.items.map(item => 
+                    `• [ ${String(item.quantity).padEnd(3)} ${item.unit.padEnd(4)} ]  ${item.description}`
+                ).join('\n');
+
+                const taskDescription = `Orçamento Aprovado - Escopo Detalhado:\n\n${itemsTable}\n\nGerado via Módulo de Orçamentos.`;
+
+                const newTask: Task = {
+                    id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                    workId: selectedWork.id,
+                    title: cat.name,
+                    description: taskDescription,
+                    status: TaskStatus.PLANNING,
+                    priority: TaskPriority.MEDIUM,
+                    dueDate: new Date().toISOString().split('T')[0],
+                    images: []
+                };
+                return api.createTask(newTask);
+            });
+            
+            await Promise.all(tasksPromises);
+            
             setIsAiModalOpen(false);
+            alert("Orçamento gerado! As etapas foram adicionadas automaticamente ao Quadro Kanban com o escopo detalhado.");
 
         } catch (error) {
             alert("Erro ao gerar orçamento com IA. Tente detalhar mais o escopo.");
@@ -147,16 +181,30 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works }) => {
         setBudget({ ...budget, categories: newCategories, totalValue });
     };
 
-    const addCategory = () => {
-        if (!budget) return;
+    const addCategory = async () => {
+        if (!budget || !selectedWork) return;
+        const newCatName = `Nova Etapa ${budget.categories.length + 1}`;
         const newCat: BudgetCategory = {
             id: `cat_${Date.now()}`,
-            name: `Nova Etapa ${budget.categories.length + 1}`,
+            name: newCatName,
             items: [],
             categoryTotal: 0
         };
         setBudget({ ...budget, categories: [...budget.categories, newCat] });
         setExpandedCategories(prev => ({ ...prev, [newCat.id]: true }));
+
+        // Auto Create Task for Manual Category
+        const newTask: Task = {
+            id: `task_${Date.now()}`,
+            workId: selectedWork.id,
+            title: newCatName,
+            description: "Tarefa macro criada manualmente via Orçamento.",
+            status: TaskStatus.PLANNING,
+            priority: TaskPriority.MEDIUM,
+            dueDate: new Date().toISOString().split('T')[0],
+            images: []
+        };
+        await api.createTask(newTask);
     };
 
     const addItem = (catId: string) => {
@@ -215,17 +263,21 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works }) => {
     // --- RENDER ---
 
     return (
-        <div className="p-6 min-h-screen pb-20 bg-slate-50">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Calculator className="text-pms-600" /> Orçamentos & Planejamento
-                    </h2>
-                    <p className="text-slate-500">Estimativas de custo, EAP e comparativos (Previsto vs Realizado).</p>
+        <div className={`min-h-screen pb-20 ${activeWorkId ? '' : 'p-6 bg-slate-50'}`}>
+            {!activeWorkId && (
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <Calculator className="text-pms-600" /> Orçamentos & Planejamento
+                        </h2>
+                        <p className="text-slate-500">Estimativas de custo, EAP e comparativos (Previsto vs Realizado).</p>
+                    </div>
                 </div>
-                
-                {/* Work Selector */}
-                <div className="bg-white p-2 rounded-lg border border-slate-300 shadow-sm flex items-center gap-2 min-w-[250px]">
+            )}
+            
+            {/* Work Selector - Only show if NO activeWorkId forced */}
+            {!activeWorkId && (
+                <div className="bg-white p-2 rounded-lg border border-slate-300 shadow-sm flex items-center gap-2 min-w-[250px] mb-6">
                     <LayoutList size={18} className="text-slate-400 ml-2" />
                     <select 
                         className="bg-transparent outline-none w-full text-sm font-bold text-slate-700"
@@ -238,7 +290,7 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works }) => {
                         ))}
                     </select>
                 </div>
-            </div>
+            )}
 
             {!selectedWorkId ? (
                 <div className="flex flex-col items-center justify-center h-64 bg-white rounded-xl border border-slate-200 shadow-sm text-slate-400">
@@ -257,14 +309,6 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works }) => {
                             <div>
                                 <span className="text-xs font-bold text-slate-400 uppercase block">Total Orçado</span>
                                 <span className="text-2xl font-bold text-pms-700">R$ {budget.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                            </div>
-                            <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
-                            <div className="hidden md:block">
-                                <span className="text-xs font-bold text-slate-400 uppercase block">Total Executado (Financeiro)</span>
-                                <span className="text-lg font-bold text-slate-600">
-                                    {/* Future integration: Compare with financial records */}
-                                    R$ -
-                                </span>
                             </div>
                         </div>
 

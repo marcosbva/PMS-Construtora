@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -309,13 +308,17 @@ function App() {
                       </div>
                       
                       <div className="flex border-b border-slate-200 mb-4 overflow-x-auto">
-                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO'].map(tab => (
+                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO'].map(tab => (
                               <button 
                                 key={tab}
                                 onClick={() => setCurrentView(tab)}
                                 className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${currentView === tab ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                               >
-                                  {tab === 'RESUMO' ? 'Visão Geral' : tab === 'KANBAN' ? 'Tarefas & Kanban' : tab === 'DIARIO' ? 'Diário de Obra' : 'Financeiro'}
+                                  {tab === 'RESUMO' ? 'Visão Geral' : 
+                                   tab === 'KANBAN' ? 'Tarefas & Kanban' : 
+                                   tab === 'DIARIO' ? 'Diário de Obra' : 
+                                   tab === 'ORCAMENTO' ? 'Orçamento' :
+                                   'Financeiro'}
                               </button>
                           ))}
                       </div>
@@ -365,11 +368,17 @@ function App() {
                                 onAddCategory={(c) => api.createCategory(c)}
                               />
                           )}
+                          {currentView === 'ORCAMENTO' && (
+                              <BudgetPlanner 
+                                works={works}
+                                activeWorkId={activeWorkId}
+                              />
+                          )}
                       </div>
                   </div>
               )}
 
-              {/* BUDGET PLANNER VIEW */}
+              {/* BUDGET PLANNER VIEW (Global) */}
               {currentView === 'BUDGET' && !activeWorkId && (
                   <BudgetPlanner works={works} />
               )}
