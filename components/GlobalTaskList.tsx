@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo } from 'react';
 import { Task, TaskStatus, TaskPriority, ConstructionWork, User, TaskStatusDefinition } from '../types';
-import { Filter, Search, Briefcase, Edit2, X, Save, Plus, History, CheckCircle2, HardHat } from 'lucide-react';
+import { Filter, Search, Briefcase, Edit2, X, Save, Plus, History, CheckCircle2, HardHat, Trash2 } from 'lucide-react';
 
 interface GlobalTaskListProps {
   tasks: Task[];
@@ -10,9 +9,10 @@ interface GlobalTaskListProps {
   taskStatuses: TaskStatusDefinition[];
   onUpdateTask: (task: Task) => void;
   onAddTask: (task: Task) => void;
+  onDeleteTask: (taskId: string) => void;
 }
 
-export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, users, taskStatuses, onUpdateTask, onAddTask }) => {
+export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, users, taskStatuses, onUpdateTask, onAddTask, onDeleteTask }) => {
   const [viewMode, setViewMode] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [filterPriority, setFilterPriority] = useState<string>('ALL');
@@ -128,6 +128,19 @@ export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, us
     
     setIsModalOpen(false);
     setEditingTask(null);
+  };
+
+  const handleDelete = async () => {
+      if (!editingTask) return;
+      if (window.confirm("Tem certeza que deseja excluir esta tarefa?")) {
+          try {
+              onDeleteTask(editingTask.id);
+              setIsModalOpen(false);
+              setEditingTask(null);
+          } catch (error) {
+              alert("Erro ao excluir tarefa.");
+          }
+      }
   };
 
   // Reusable row renderer
@@ -453,20 +466,32 @@ export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, us
                 </div>
              </div>
 
-             <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
-                <button 
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={handleSave}
-                  disabled={!editTitle || !editWorkId}
-                  className="px-4 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 font-bold shadow-lg shadow-pms-600/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Save size={18} /> {editingTask ? 'Salvar' : 'Criar Tarefa'}
-                </button>
+             <div className="flex items-center mt-6 pt-4 border-t border-slate-100">
+                {editingTask && (
+                   <button 
+                       onClick={handleDelete}
+                       className="text-red-600 hover:bg-red-50 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors mr-auto"
+                       title="Excluir tarefa"
+                   >
+                       <Trash2 size={18} /> Excluir
+                   </button>
+                )}
+
+                <div className="flex gap-3 ml-auto">
+                    <button 
+                      onClick={() => setIsModalOpen(false)}
+                      className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      onClick={handleSave}
+                      disabled={!editTitle || !editWorkId}
+                      className="px-4 py-2 bg-pms-600 text-white rounded-lg hover:bg-pms-500 font-bold shadow-lg shadow-pms-600/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Save size={18} /> {editingTask ? 'Salvar' : 'Criar Tarefa'}
+                    </button>
+                </div>
              </div>
           </div>
         </div>

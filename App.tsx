@@ -438,6 +438,7 @@ function App() {
                     taskStatuses={DEFAULT_TASK_STATUSES}
                     onAddTask={(t) => { setTasks([...tasks, t]); api.createTask(t); }}
                     onUpdateTask={(t) => { setTasks(tasks.map(old => old.id === t.id ? t : old)); api.updateTask(t); }}
+                    onDeleteTask={(id) => { setTasks(tasks.filter(t => t.id !== id)); api.deleteTask(id); }}
                   />
               )}
               {currentView === 'FINANCE' && !activeWorkId && (

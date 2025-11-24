@@ -114,6 +114,11 @@ export const api = {
       if (!db) return;
       await updateDoc(doc(db, COLLECTIONS.TASKS, task.id), { ...task });
   },
+  deleteTask: async (id: string) => {
+      const db = getDb();
+      if (!db) return;
+      await deleteDoc(doc(db, COLLECTIONS.TASKS, id));
+  },
 
   getFinance: async (): Promise<FinancialRecord[]> => {
       const db = getDb();
