@@ -1,7 +1,8 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog } from '../types';
-import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator } from 'lucide-react';
+import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink } from 'lucide-react';
 import { api } from '../services/api';
 import { WorkforceSummary } from './WorkforceSummary';
 
@@ -234,6 +235,19 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
                 </div>
 
                 <div className="mt-4">
+                    <label className="block text-xs font-bold text-slate-500 mb-1 uppercase flex items-center gap-1">
+                        <LinkIcon size={14} /> Link de Projetos (Google Drive / Dropbox)
+                    </label>
+                    <input 
+                        type="url"
+                        className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-pms-500 outline-none text-blue-600 underline"
+                        value={formData.driveLink || ''}
+                        onChange={(e) => handleChange('driveLink', e.target.value)}
+                        placeholder="Cole aqui o link da pasta de projetos..."
+                    />
+                </div>
+
+                <div className="mt-4">
                     <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Descrição / Observações</label>
                     <textarea 
                         className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-pms-500 outline-none h-32 resize-none"
@@ -295,6 +309,20 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
                     {isSaving ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
             </div>
+
+            {/* DRIVE ACCESS BUTTON */}
+            {formData.driveLink && (
+                <a 
+                    href={formData.driveLink} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-md flex items-center justify-center gap-3 transition-all transform hover:scale-105 group"
+                >
+                    <FolderOpen size={24} className="group-hover:animate-bounce" />
+                    <span>Acessar Projetos (Drive)</span>
+                    <ExternalLink size={16} className="opacity-70" />
+                </a>
+            )}
 
             {/* WORKFORCE SUMMARY WIDGET */}
             <WorkforceSummary logs={logs} title="Efetivo Acumulado" />

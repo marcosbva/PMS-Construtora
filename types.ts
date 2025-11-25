@@ -112,6 +112,7 @@ export interface ConstructionWork {
   imageUrl: string;
   description: string;
   teamIds?: string[];
+  driveLink?: string; // Link para Google Drive / Projetos
 }
 
 export enum TaskStatus {
@@ -320,7 +321,8 @@ export enum InventoryStatus {
   AVAILABLE = 'Disponível',
   IN_USE = 'Em Uso',
   MAINTENANCE = 'Manutenção',
-  LOST = 'Perdido/Quebrado'
+  LOST = 'Perdido/Quebrado',
+  LOANED = 'Emprestado'
 }
 
 export interface InventoryItem {
@@ -331,6 +333,7 @@ export interface InventoryItem {
   serialNumber?: string;
   status: InventoryStatus;
   currentWorkId?: string; // null means "Depósito/Warehouse"
+  currentPartnerId?: string; // null means no partner
   lastMovementDate: string;
   purchaseDate?: string;
   imageUrl?: string;

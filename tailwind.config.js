@@ -8,17 +8,17 @@ export default {
     extend: {
       colors: {
         pms: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          200: '#bae6fd',
-          300: '#7dd3fc',
-          400: '#38bdf8',
-          500: '#0ea5e9', // Primary Blue
-          600: '#0284c7',
-          700: '#0369a1',
-          800: '#075985',
-          900: '#0c4a6e',
-          orange: '#f97316', // Accent for Construction
+          50: '#fcfbf4',
+          100: '#f7f5e3',
+          200: '#eee6c2',
+          300: '#e3d197',
+          400: '#d6b769',
+          500: '#c59d45', // Gold Primary
+          600: '#a87e33',
+          700: '#865f29',
+          800: '#6f4d27',
+          900: '#5c4024',
+          orange: '#D97706', // Accent for Construction (Darker Orange/Gold)
         }
       }
     },

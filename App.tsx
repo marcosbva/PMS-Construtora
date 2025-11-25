@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition, InventoryItem, RentalItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -14,9 +13,10 @@ import { WorkOverview } from './components/WorkOverview';
 import { BudgetPlanner } from './components/BudgetPlanner';
 import { InventoryManager } from './components/InventoryManager';
 import { RentalControl } from './components/RentalControl';
+import { ClientDashboard } from './components/ClientDashboard';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
-import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle, Calculator, Wrench } from 'lucide-react';
+import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle, Calculator, Wrench, Phone } from 'lucide-react';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -183,18 +183,87 @@ function App() {
       return <AuthScreen users={users} onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
+  // --- CLIENT PORTAL MODE ---
+  if (currentUser.category === UserCategory.CLIENT) {
+      return (
+          <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
+              {/* Minimal Client Sidebar */}
+              <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-20 hidden md:flex">
+                  <div className="p-6 border-b border-slate-800">
+                      <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden bg-black border border-slate-700">
+                              <img 
+                                src="https://i.imgur.com/Qe2e0lQ.jpg" 
+                                alt="PMS Construtora" 
+                                className="w-full h-full object-contain"
+                              />
+                          </div>
+                          <div>
+                              <h1 className="font-bold text-lg leading-tight text-pms-400">PMS</h1>
+                              <p className="text-xs text-slate-400 font-medium">Área do Cliente</p>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <nav className="flex-1 p-4 space-y-2">
+                      <div className="bg-slate-800/50 rounded-lg p-3 text-sm text-slate-300 mb-4">
+                          Bem-vindo, <strong>{currentUser.name.split(' ')[0]}</strong>.
+                      </div>
+                      <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold bg-pms-600 text-white shadow-lg shadow-pms-600/30">
+                          <LayoutGrid size={18} /> Meu Painel
+                      </button>
+                      <a href="https://wa.me/5511999999999" target="_blank" className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold text-slate-400 hover:bg-green-600 hover:text-white transition-colors">
+                          <Phone size={18} /> Falar com Engenheiro
+                      </a>
+                  </nav>
+
+                  <div className="p-4 border-t border-slate-800">
+                      <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white py-2 rounded-lg transition-colors text-sm font-bold">
+                          <LogOut size={16} /> Sair
+                      </button>
+                  </div>
+              </aside>
+
+              {/* Client Main Content */}
+              <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+                  <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-30">
+                      <div className="flex items-center gap-2">
+                          <img src="https://i.imgur.com/Qe2e0lQ.jpg" alt="Logo" className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" />
+                          <span className="font-bold text-pms-400">Área do Cliente</span>
+                      </div>
+                      <button onClick={handleLogout}><LogOut size={20}/></button>
+                  </header>
+
+                  <div className="flex-1 overflow-auto p-4 md:p-8">
+                      <ClientDashboard 
+                          currentUser={currentUser}
+                          works={works}
+                          finance={finance}
+                          logs={logs}
+                      />
+                  </div>
+              </main>
+          </div>
+      );
+  }
+
+  // --- ADMIN / INTERNAL MODE ---
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans text-slate-900">
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-20 hidden md:flex">
           <div className="p-6 border-b border-slate-800">
               <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-pms-600 rounded-lg flex items-center justify-center">
-                      <HardHat size={24} />
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden bg-black border border-slate-700">
+                      <img 
+                        src="https://i.imgur.com/Qe2e0lQ.jpg" 
+                        alt="PMS Construtora" 
+                        className="w-full h-full object-contain"
+                      />
                   </div>
                   <div>
-                      <h1 className="font-bold text-lg leading-tight">PMS Eng.</h1>
-                      <p className="text-xs text-slate-400">Gestão de Obras</p>
+                      <h1 className="font-bold text-lg leading-tight text-pms-400">PMS</h1>
+                      <p className="text-xs text-slate-400 font-medium">Construtora</p>
                   </div>
               </div>
           </div>
@@ -218,7 +287,6 @@ function App() {
               <button onClick={() => { setCurrentView('MATERIALS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'MATERIALS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Package size={18} /> Materiais & Compras
               </button>
-              {/* NEW INVENTORY BUTTON */}
               <button onClick={() => { setCurrentView('INVENTORY'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'INVENTORY' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Wrench size={18} /> Estoque & Equip.
               </button>
@@ -231,7 +299,7 @@ function App() {
               <div className="flex items-center gap-3 mb-4 px-2">
                   <img src={currentUser.avatar} alt="User" className="w-8 h-8 rounded-full border border-slate-600" />
                   <div className="overflow-hidden">
-                      <p className="text-sm font-bold truncate">{currentUser.name}</p>
+                      <p className="text-sm font-bold truncate text-pms-100">{currentUser.name}</p>
                       <p className="text-xs text-slate-500 truncate">{currentUser.role}</p>
                   </div>
               </div>
@@ -245,8 +313,8 @@ function App() {
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
           <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-30">
               <div className="flex items-center gap-2">
-                  <HardHat size={20} className="text-pms-600" />
-                  <span className="font-bold">PMS Eng.</span>
+                  <img src="https://i.imgur.com/Qe2e0lQ.jpg" alt="Logo" className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" />
+                  <span className="font-bold text-pms-400">PMS Construtora</span>
               </div>
               <button onClick={handleLogout}><LogOut size={20}/></button>
           </header>

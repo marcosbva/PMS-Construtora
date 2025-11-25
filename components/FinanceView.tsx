@@ -1,4 +1,5 @@
 
+
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { FinancialRecord, FinanceType, User, UserRole, ConstructionWork, FinanceCategoryDefinition, WorkBudget } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from 'recharts';
@@ -17,7 +18,8 @@ interface FinanceViewProps {
   onAddCategory?: (category: FinanceCategoryDefinition) => void;
 }
 
-const COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308', '#ec4899', '#6366f1'];
+// Updated Colors for Gold Theme
+const COLORS = ['#c59d45', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308', '#ec4899', '#6366f1'];
 
 export const FinanceView: React.FC<FinanceViewProps> = ({ 
     records, currentUser, users, work, financeCategories = [],

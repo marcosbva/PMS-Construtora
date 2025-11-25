@@ -8,7 +8,8 @@ interface WorkforceSummaryProps {
   title?: string;
 }
 
-const COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308', '#6366f1', '#ec4899', '#64748b'];
+// Updated colors for Gold Theme
+const COLORS = ['#c59d45', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308', '#6366f1', '#ec4899', '#64748b'];
 
 export const WorkforceSummary: React.FC<WorkforceSummaryProps> = ({ logs, title = "Resumo de Efetivo" }) => {
   

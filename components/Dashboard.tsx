@@ -32,7 +32,8 @@ import {
 import { api } from '../services/api';
 import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, MaterialOrder, OrderStatus, RentalItem, RentalStatus } from '../types';
 
-const PIE_COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308'];
+// Updated colors to match new Brand Identity (Gold Primary)
+const PIE_COLORS = ['#c59d45', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308'];
 
 interface KPIState {
   activeWorks: number;
@@ -302,7 +303,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
                 formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Gasto Total']}
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
-              <Bar dataKey="value" fill="#0ea5e9" radius={[0, 4, 4, 0]} barSize={20} />
+              <Bar dataKey="value" fill="#c59d45" radius={[0, 4, 4, 0]} barSize={20} />
             </BarChart>
           </ResponsiveContainer>
         </div>

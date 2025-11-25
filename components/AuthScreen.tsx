@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { User, UserRole, UserCategory } from '../types';
 import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, ShieldCheck, Cloud, Database, Loader2, Clock, LogOut, Key } from 'lucide-react';
@@ -157,7 +158,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 try {
                     userCredential = await signInWithEmailAndPassword(auth, email, password);
                 } catch (authError: any) {
-                    throw new Error('Email ou senha incorretos.');
+                    console.error("Firebase Auth Error:", authError.code, authError.message);
+                    
+                    switch (authError.code) {
+                        case 'auth/invalid-credential':
+                        case 'auth/wrong-password':
+                            throw new Error('Senha incorreta ou usuário inexistente.');
+                        case 'auth/user-not-found':
+                            throw new Error('Usuário não encontrado. Verifique o email.');
+                        case 'auth/invalid-email':
+                            throw new Error('Formato de email inválido.');
+                        case 'auth/user-disabled':
+                            throw new Error('Esta conta foi desativada.');
+                        case 'auth/too-many-requests':
+                            throw new Error('Muitas tentativas falhas. Aguarde alguns instantes.');
+                        case 'auth/network-request-failed':
+                            throw new Error('Erro de conexão. Verifique sua internet.');
+                        default:
+                            throw new Error('Falha na autenticação. Verifique suas credenciais.');
+                    }
                 }
 
                 const uid = userCredential.user.uid;
@@ -165,20 +184,34 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 let user = dbUsers.find(u => u.id === uid);
 
                 if (!user) {
-                    // Auto-healing logic
-                    const isSystemEmpty = dbUsers.length === 0;
-                    const shouldBeAdmin = isSystemEmpty || email.includes('admin') || email.includes('pms');
-                    user = {
-                        id: uid,
-                        name: email.split('@')[0],
-                        email: email,
-                        role: shouldBeAdmin ? UserRole.ADMIN : UserRole.VIEWER,
-                        category: UserCategory.INTERNAL,
-                        avatar: `https://ui-avatars.com/api/?name=${email.charAt(0)}`,
-                        status: 'ACTIVE',
-                        mustChangePassword: false
-                    };
-                    try { await api.createUser(user); } catch (ce) { await signOut(auth); throw new Error('Perfil corrompido.'); }
+                    // Auto-healing logic: User exists in Auth but not in Firestore
+                    // Try to recover based on email if UID mismatch or just create basic profile
+                    const userByEmail = dbUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+                    
+                    if (userByEmail) {
+                        // Mismatch ID case (Seed vs Auth)
+                        user = userByEmail; 
+                    } else {
+                        // Complete mismatch - Create new profile
+                        const isSystemEmpty = dbUsers.length === 0;
+                        const shouldBeAdmin = isSystemEmpty || email.includes('admin') || email.includes('pms');
+                        user = {
+                            id: uid,
+                            name: email.split('@')[0],
+                            email: email,
+                            role: shouldBeAdmin ? UserRole.ADMIN : UserRole.VIEWER,
+                            category: UserCategory.INTERNAL,
+                            avatar: `https://ui-avatars.com/api/?name=${email.charAt(0)}`,
+                            status: 'ACTIVE',
+                            mustChangePassword: false
+                        };
+                        try { 
+                            await api.createUser(user); 
+                        } catch (ce) { 
+                            await signOut(auth); 
+                            throw new Error('Erro ao criar perfil de usuário.'); 
+                        }
+                    }
                 }
 
                 if (user.status === 'PENDING') {
@@ -203,6 +236,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 onLogin(user);
 
             } else {
+                // OFFLINE MODE MOCK
                 await new Promise(resolve => setTimeout(resolve, 500));
                 const user = initialUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
                 
@@ -216,14 +250,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
             }
         }
     } catch (err: any) {
-        console.error("Auth Error:", err);
+        console.error("Auth Logic Error:", err);
         setError(err.message || 'Ocorreu um erro.');
     } finally {
         if (!isResettingPassword) setIsLoading(false);
     }
   };
 
-  // ... (PendingSuccess and PasswordReset renders omitted for brevity, same as original) ...
   if (showPendingSuccess) {
       return (
         <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -271,9 +304,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
 
             <div className="p-8 pt-6">
                 <div className="flex flex-col items-center mb-8">
-                    <div className="w-16 h-16 bg-pms-600 rounded-xl flex items-center justify-center text-white mb-4 shadow-lg shadow-pms-600/30">
-                        <HardHat size={32} />
-                    </div>
+                    <img 
+                        src="https://i.imgur.com/Qe2e0lQ.jpg" 
+                        alt="PMS Construtora" 
+                        className="w-24 h-24 rounded-xl mb-4 shadow-lg shadow-pms-600/30 object-contain bg-black"
+                    />
                     <h1 className="text-2xl font-bold text-slate-800">PMS Construtora</h1>
                     <p className="text-slate-500 text-sm">Sistema de Gestão Integrada</p>
                 </div>
@@ -298,7 +333,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
 
                     {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2 animate-shake border border-red-100"><AlertCircle size={16} className="shrink-0 mt-0.5" />{error}</div>}
 
-                    <button type="submit" disabled={isLoading || !isFormValid()} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg group disabled:opacity-70 disabled:cursor-not-allowed">
+                    <button type="submit" disabled={isLoading || !isFormValid()} className="w-full bg-pms-600 hover:bg-pms-500 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg group disabled:opacity-70 disabled:cursor-not-allowed">
                         {isLoading ? <><Loader2 size={20} className="animate-spin" /> Processando...</> : <>{isRegistering ? 'Criar Conta' : 'Acessar Sistema'} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></>}
                     </button>
                 </form>
