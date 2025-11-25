@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Task, TaskStatus, TaskPriority, User } from '../types';
-import { Calendar, CheckSquare, Square, ChevronLeft, ChevronRight, Plus, User as UserIcon, ListChecks, AlertCircle } from 'lucide-react';
+import { Calendar, CheckSquare, Square, ChevronLeft, ChevronRight, Plus, User as UserIcon, ListChecks, AlertCircle, ArrowDownCircle, RefreshCw, X } from 'lucide-react';
 
 interface WeeklyPlanningProps {
   workId: string;
@@ -53,6 +53,16 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
       return tasks.filter(t => t.workId === workId && t.planningWeek === selectedWeek);
   }, [tasks, workId, selectedWeek]);
 
+  // Logic to find overdue tasks from previous weeks
+  const overdueTasks = useMemo(() => {
+      return tasks.filter(t => 
+          t.workId === workId && 
+          t.planningWeek && // Is a weekly task
+          t.planningWeek < selectedWeek && // From a past week
+          t.status !== TaskStatus.DONE // Not finished
+      );
+  }, [tasks, workId, selectedWeek]);
+
   const progress = useMemo(() => {
       if (weeklyTasks.length === 0) return 0;
       const completed = weeklyTasks.filter(t => t.status === TaskStatus.DONE).length;
@@ -94,6 +104,20 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
       setNewTaskTitle('');
   };
 
+  const handleImportOverdue = () => {
+      if (overdueTasks.length === 0) return;
+      
+      if (window.confirm(`Deseja mover ${overdueTasks.length} tarefas pendentes para a semana atual?`)) {
+          overdueTasks.forEach(task => {
+              onUpdateTask({
+                  ...task,
+                  planningWeek: selectedWeek, // Move to this week
+                  status: TaskStatus.PLANNING // Ensure it's active
+              });
+          });
+      }
+  };
+
   const toggleTaskCompletion = (task: Task) => {
       const newStatus = task.status === TaskStatus.DONE ? TaskStatus.PLANNING : TaskStatus.DONE;
       const completedDate = newStatus === TaskStatus.DONE ? new Date().toISOString().split('T')[0] : undefined;
@@ -103,6 +127,19 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
           status: newStatus,
           completedDate
       });
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+      // Assuming onUpdateTask logic handles delete via status or we need a dedicated delete handler prop.
+      // Since deleting is critical, for now we can set status to archived or just hide it from week.
+      // However, proper way is asking parent to delete. 
+      // Since prop is not passed, we will just remove the planningWeek tag to "remove" it from the list.
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+          if(window.confirm("Remover esta tarefa da lista semanal?")) {
+             onUpdateTask({ ...task, planningWeek: undefined });
+          }
+      }
   };
 
   return (
@@ -147,6 +184,29 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
               ></div>
           </div>
       </div>
+
+      {/* OVERDUE TASKS ALERT */}
+      {overdueTasks.length > 0 && (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in slide-in-from-top-2">
+              <div className="flex items-start gap-3">
+                  <div className="bg-orange-100 p-2 rounded-full text-orange-600">
+                      <AlertCircle size={20} />
+                  </div>
+                  <div>
+                      <h4 className="font-bold text-orange-800">Pendências Encontradas</h4>
+                      <p className="text-sm text-orange-700">
+                          Você tem <strong>{overdueTasks.length} tarefas</strong> não concluídas de semanas anteriores.
+                      </p>
+                  </div>
+              </div>
+              <button 
+                onClick={handleImportOverdue}
+                className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 shadow-sm transition-all whitespace-nowrap w-full md:w-auto justify-center"
+              >
+                  <RefreshCw size={16} /> Trazer para esta Semana
+              </button>
+          </div>
+      )}
 
       {/* Quick Add Input */}
       <div className="flex gap-2 mb-6">
@@ -228,6 +288,14 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
                               }`}>
                                   {task.priority}
                               </div>
+
+                              <button 
+                                  onClick={() => handleDeleteTask(task.id)}
+                                  className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Remover da semana"
+                              >
+                                  <X size={18} />
+                              </button>
                           </div>
                       );
                   })}

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, UserRole, UserCategory } from '../types';
-import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, ShieldCheck, Cloud, Database, Loader2, Clock, LogOut, Key } from 'lucide-react';
+import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, ShieldCheck, Cloud, Database, Loader2, Clock, LogOut, Key, MessageCircle } from 'lucide-react';
 import { api } from '../services/api';
 import { getAuthInstance, updateUserPassword } from '../services/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
@@ -10,7 +10,7 @@ interface AuthScreenProps {
   users: User[];
   onLogin: (user: User) => void;
   onRegister: (user: User) => Promise<void>;
-  companySettings?: { name?: string, logoUrl?: string } | null;
+  companySettings?: { name?: string, logoUrl?: string, phone?: string } | null;
 }
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onLogin, onRegister, companySettings }) => {
@@ -337,6 +337,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                         {isLoading ? <><Loader2 size={20} className="animate-spin" /> Processando...</> : <>{isRegistering ? 'Criar Conta' : 'Acessar Sistema'} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></>}
                     </button>
                 </form>
+
+                {/* WhatsApp / Support Button */}
+                {companySettings?.phone && (
+                    <a 
+                        href={`https://wa.me/55${companySettings.phone.replace(/\D/g, '')}`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="mt-4 w-full flex items-center justify-center gap-2 text-green-600 font-bold bg-green-50 hover:bg-green-100 py-3 rounded-xl transition-all border border-green-100 hover:border-green-200"
+                    >
+                        <MessageCircle size={20} />
+                        Falar com a Engenharia
+                    </a>
+                )}
 
                 <div className="mt-6 text-center">
                     <p className="text-sm text-slate-500">

@@ -7,14 +7,18 @@ import { Calculator, Plus, Save, BrainCircuit, ChevronDown, ChevronRight, Trash2
 
 interface BudgetPlannerProps {
     works: ConstructionWork[];
-    activeWorkId?: string; // Optional: If provided, locks the view to this work
+    tasks: Task[]; // Added to check existing tasks
+    activeWorkId?: string;
+    onAddTask: (task: Task) => void; // Added to create tasks
+    onUpdateTask: (task: Task) => void; // Added to update tasks
 }
 
-export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkId }) => {
+export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, tasks, activeWorkId, onAddTask, onUpdateTask }) => {
     const [selectedWorkId, setSelectedWorkId] = useState<string>(activeWorkId || '');
     const [budget, setBudget] = useState<WorkBudget | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
     // Financial Data for Comparison
@@ -88,6 +92,61 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         loadData();
     }, [selectedWorkId]);
 
+    // --- SYNC TO KANBAN HANDLER ---
+    const handleSyncToKanban = async () => {
+        if (!budget || !selectedWork) return;
+        
+        setIsSyncing(true);
+        try {
+            let createdCount = 0;
+            let updatedCount = 0;
+
+            for (const category of budget.categories) {
+                // 1. Build the Description Table
+                const itemsTable = category.items.map(item => 
+                    `• [ ${String(item.quantity).padEnd(3)} ${item.unit.padEnd(4)} ]  ${item.description}`
+                ).join('\n');
+
+                const taskDescription = `Orçamento Aprovado - Escopo Detalhado:\n\n${itemsTable}\n\n(Sincronizado em ${new Date().toLocaleDateString('pt-BR')})`;
+
+                // 2. Check if task exists (Match by Title and WorkId)
+                const existingTask = tasks.find(t => t.workId === selectedWork.id && t.title.trim() === category.name.trim());
+
+                if (existingTask) {
+                    // Update existing task description
+                    const updatedTask = {
+                        ...existingTask,
+                        description: taskDescription
+                    };
+                    onUpdateTask(updatedTask);
+                    updatedCount++;
+                } else {
+                    // Create new task
+                    const newTask: Task = {
+                        id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                        workId: selectedWork.id,
+                        title: category.name,
+                        description: taskDescription,
+                        status: TaskStatus.PLANNING,
+                        priority: TaskPriority.MEDIUM,
+                        dueDate: new Date().toISOString().split('T')[0],
+                        images: []
+                    };
+                    onAddTask(newTask);
+                    createdCount++;
+                }
+            }
+
+            alert(`Sincronização concluída!\n\nTarefas Criadas: ${createdCount}\nTarefas Atualizadas: ${updatedCount}\n\nVerifique a aba "Tarefas & Kanban".`);
+
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao sincronizar com Kanban.");
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
     // --- AI MODAL HANDLERS ---
 
     const openAiModal = () => {
@@ -154,33 +213,8 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
             const allExpanded = aiCategories.reduce((acc, cat) => ({...acc, [cat.id]: true}), {});
             setExpandedCategories(allExpanded);
             
-            // --- AUTO CREATE TASKS FOR KANBAN ---
-            // For each macro category generated, create a Task in Planning
-            const tasksPromises = aiCategories.map(cat => {
-                // Build a structured list (table-like) of items for the description
-                const itemsTable = cat.items.map(item => 
-                    `• [ ${String(item.quantity).padEnd(3)} ${item.unit.padEnd(4)} ]  ${item.description}`
-                ).join('\n');
-
-                const taskDescription = `Orçamento Aprovado - Escopo Detalhado:\n\n${itemsTable}\n\nGerado via Módulo de Orçamentos (BIM AI).`;
-
-                const newTask: Task = {
-                    id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    workId: selectedWork.id,
-                    title: cat.name,
-                    description: taskDescription,
-                    status: TaskStatus.PLANNING,
-                    priority: TaskPriority.MEDIUM,
-                    dueDate: new Date().toISOString().split('T')[0],
-                    images: []
-                };
-                return api.createTask(newTask);
-            });
-            
-            await Promise.all(tasksPromises);
-            
             setIsAiModalOpen(false);
-            alert("Orçamento BIM gerado! As etapas foram adicionadas automaticamente ao Quadro Kanban com o escopo detalhado.");
+            alert("Orçamento BIM gerado! Revise os itens e clique em 'Sincronizar com Kanban' para criar as tarefas.");
 
         } catch (error) {
             alert("Erro ao gerar orçamento com IA. Tente detalhar mais o escopo ou usar uma imagem menor.");
@@ -266,19 +300,6 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         };
         setBudget({ ...budget, categories: [...budget.categories, newCat] });
         setExpandedCategories(prev => ({ ...prev, [newCat.id]: true }));
-
-        // Auto Create Task for Manual Category
-        const newTask: Task = {
-            id: `task_${Date.now()}`,
-            workId: selectedWork.id,
-            title: newCatName,
-            description: "Tarefa macro criada manualmente via Orçamento.",
-            status: TaskStatus.PLANNING,
-            priority: TaskPriority.MEDIUM,
-            dueDate: new Date().toISOString().split('T')[0],
-            images: []
-        };
-        await api.createTask(newTask);
     };
 
     const addItem = (catId: string) => {
@@ -400,6 +421,17 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                         </div>
 
                         <div className="flex gap-2">
+                             {/* SYNC BUTTON */}
+                             <button 
+                                onClick={handleSyncToKanban}
+                                disabled={isSyncing}
+                                className="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-orange-600/20 transition-all disabled:opacity-70"
+                                title="Criar/Atualizar tarefas no Kanban baseadas neste orçamento"
+                             >
+                                {isSyncing ? <Loader2 size={18} className="animate-spin"/> : <RefreshCw size={18} />}
+                                <span className="hidden sm:inline">Sincronizar com Kanban</span>
+                             </button>
+
                              <button 
                                 onClick={handleGenerateProposal}
                                 disabled={isGeneratingProposal}

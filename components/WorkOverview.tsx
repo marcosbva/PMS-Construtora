@@ -1,20 +1,22 @@
 
 import React, { useState, useEffect } from 'react';
-import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog } from '../types';
+import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog, MaterialOrder } from '../types';
 import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat, Upload, Eye, Lock } from 'lucide-react';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
 import { WorkforceSummary } from './WorkforceSummary';
+import { WhatsAppReportCard } from './WhatsAppReportCard';
 
 interface WorkOverviewProps {
   work: ConstructionWork;
   users: User[]; // To select client
   logs: DailyLog[]; // To calculate stats
+  orders: MaterialOrder[]; // For material reporting
   onUpdateWork: (work: ConstructionWork) => Promise<void>;
   onDeleteWork: (id: string) => Promise<void>;
 }
 
-export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, onUpdateWork, onDeleteWork }) => {
+export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, orders, onUpdateWork, onDeleteWork }) => {
   const [formData, setFormData] = useState<ConstructionWork>(work);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -375,6 +377,9 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
         {/* Right Column: Status & Save */}
         <div className="space-y-6">
             
+            {/* WHATSAPP REPORT CARD */}
+            <WhatsAppReportCard work={work} orders={orders} />
+
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                 <h3 className="text-sm font-bold text-slate-800 mb-4 uppercase flex items-center gap-2">
                     <Save size={16} className="text-pms-600"/> Ações

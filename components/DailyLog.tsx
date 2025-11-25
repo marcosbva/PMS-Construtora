@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { DailyLog, User, Task, WORKFORCE_ROLES_LIST, ISSUE_CATEGORIES_LIST, IssueCategory, IssueSeverity, IssueImpact } from '../types';
-import { Camera, Calendar, User as UserIcon, Sun, Cloud, CloudRain, CloudSnow, Briefcase, CheckCircle2, X, AlertTriangle, FileText, Upload, Link as LinkIcon, Image as ImageIcon, Trash2, Plus, Minus, Users, HardHat, Siren, AlertOctagon, ShieldCheck, Flame, Clock, DollarSign, Leaf, HeartPulse, Zap, Edit2, CheckSquare, Square, Loader2 } from 'lucide-react';
+import { Camera, Calendar, Sun, Cloud, CloudRain, CloudSnow, Briefcase, CheckCircle2, X, AlertTriangle, Trash2, Plus, Minus, HardHat, Siren, AlertOctagon, ShieldCheck, Flame, Clock, DollarSign, Leaf, HeartPulse, Edit2, CheckSquare, Square, Loader2, Upload, Link as LinkIcon, ChevronDown, ChevronUp, BarChart3, Droplets } from 'lucide-react';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
 
@@ -22,6 +22,9 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
   const [editingLog, setEditingLog] = useState<DailyLog | null>(null);
   const [isProcessingImages, setIsProcessingImages] = useState(false);
   
+  // Expanded State for Accordion View
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
   // Form State
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [weather, setWeather] = useState<'Sol' | 'Nublado' | 'Chuva' | 'Neve'>('Sol');
@@ -40,10 +43,28 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
   const [severity, setSeverity] = useState<IssueSeverity>('Baixa');
   const [selectedImpacts, setSelectedImpacts] = useState<IssueImpact[]>([]);
   const [actionPlan, setActionPlan] = useState('');
-  const [isResolved, setIsResolved] = useState(false); // New local state for resolution
+  const [isResolved, setIsResolved] = useState(false);
 
   // Upload Modal State
   const [tempLink, setTempLink] = useState('');
+
+  // --- KPI CALCULATIONS ---
+  const stats = useMemo(() => {
+      const totalDays = logs.length;
+      const incidents = logs.filter(l => l.type === 'Intercorrência').length;
+      const rainyDays = logs.filter(l => l.weather === 'Chuva').length;
+      
+      let totalHeadcount = 0;
+      logs.forEach(l => {
+          if (l.workforce) {
+              const values = Object.values(l.workforce) as number[];
+              totalHeadcount += values.reduce((a: number, b: number) => a + b, 0);
+          }
+      });
+      const avgHeadcount = totalDays > 0 ? Math.round(totalHeadcount / totalDays) : 0;
+
+      return { totalDays, incidents, rainyDays, avgHeadcount };
+  }, [logs]);
 
   const resetForm = () => {
       setDate(new Date().toISOString().split('T')[0]);
@@ -67,16 +88,13 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       setType(forcedType || 'Diário');
       setIsModalOpen(true);
 
-      // SMART AUTOFILL LOGIC:
-      // If creating a new log (not editing), try to fetch last log for workforce
       if (!editingLog && (forcedType !== 'Intercorrência')) {
           api.getLastLog(workId).then((lastLog) => {
               if (lastLog && lastLog.workforce && Object.keys(lastLog.workforce).length > 0) {
-                  // Only autofill if user hasn't started typing (check empty workforce)
                   setWorkforce((current) => {
                       if (Object.keys(current).length === 0) {
                           setAutofillNotice(`Dados de efetivo copiados de ${new Date(lastLog.date).toLocaleDateString('pt-BR')}`);
-                          setTimeout(() => setAutofillNotice(null), 6000); // Hide after 6s
+                          setTimeout(() => setAutofillNotice(null), 6000); 
                           return lastLog.workforce!;
                       }
                       return current;
@@ -86,11 +104,11 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       }
   };
 
-  const handleEditClick = (log: DailyLog) => {
+  const handleEditClick = (e: React.MouseEvent, log: DailyLog) => {
+      e.stopPropagation();
       setEditingLog(log);
       setAutofillNotice(null);
       
-      // Populate fields
       setDate(log.date);
       setWeather(log.weather || 'Sol');
       setRelatedTaskId(log.relatedTaskId || '');
@@ -100,7 +118,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       setFormImages(log.images || []);
       setWorkforce(log.workforce || {});
       
-      // Issue specific
       if (log.type === 'Intercorrência') {
           setIssueCategory(log.issueCategory || '');
           setSeverity(log.severity || 'Baixa');
@@ -112,6 +129,10 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       }
 
       setIsModalOpen(true);
+  };
+
+  const toggleLogExpansion = (id: string) => {
+      setExpandedLogId(prev => prev === id ? null : id);
   };
 
   const toggleTeamMember = (userId: string) => {
@@ -126,7 +147,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       );
   };
 
-  // Workforce Counters
   const updateWorkforce = (role: string, delta: number) => {
       setWorkforce(prev => {
           const current = prev[role] || 0;
@@ -142,29 +162,22 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       });
   };
 
-  // Handle Local File Selection with STORAGE UPLOAD
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         setIsProcessingImages(true);
         try {
             const files: File[] = Array.from(e.target.files);
-            
-            // Upload all files in parallel
             const uploadPromises = files.map(file => {
-                // Standardized Path: obras/${obraId}/diarios/${date}/${timestamp_filename}
                 const path = `obras/${workId}/diarios/${date}`;
                 return uploadFile(file, path, { 
                     type: 'daily_log_image',
                     author: currentUser.id 
                 });
             });
-            
             const uploadedUrls = await Promise.all(uploadPromises);
-            
             setFormImages(prev => [...prev, ...uploadedUrls]);
-            setIsUploadModalOpen(false); // Auto close on success
+            setIsUploadModalOpen(false);
         } catch (error: any) {
-            console.error("Upload error:", error);
             alert(`Erro ao enviar imagens: ${error.message}`);
         } finally {
             setIsProcessingImages(false);
@@ -205,11 +218,9 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
           relatedTaskId: relatedTaskId || undefined,
           teamIds: selectedTeamIds,
           workforce: Object.keys(workforce).length > 0 ? workforce : undefined,
-          
-          // Issue specific fields
           issueCategory: type === 'Intercorrência' ? (issueCategory as IssueCategory) : undefined,
           isResolved: type === 'Intercorrência' ? isResolved : undefined,
-          resolvedAt: (isResolved && !editingLog?.isResolved) ? new Date().toISOString() : editingLog?.resolvedAt, // Set date if just resolved
+          resolvedAt: (isResolved && !editingLog?.isResolved) ? new Date().toISOString() : editingLog?.resolvedAt,
           resolvedBy: (isResolved && !editingLog?.isResolved) ? currentUser.id : editingLog?.resolvedBy,
           severity: type === 'Intercorrência' ? severity : undefined,
           impacts: type === 'Intercorrência' && selectedImpacts.length > 0 ? selectedImpacts : undefined,
@@ -228,9 +239,7 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
 
   const handleResolveIssue = (e: React.MouseEvent, log: DailyLog) => {
       e.stopPropagation();
-      
       if (!onUpdateLog) return;
-      
       if (window.confirm("Confirmar que esta intercorrência foi sanada?")) {
           const updatedLog = {
               ...log,
@@ -244,7 +253,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
 
   const handleDelete = () => {
       if (!editingLog || !onDeleteLog) return;
-      
       if (window.confirm("Tem certeza que deseja excluir este registro permanentemente?")) {
           onDeleteLog(editingLog.id);
           setIsModalOpen(false);
@@ -254,11 +262,11 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
 
   const getWeatherIcon = (w?: string) => {
       switch(w) {
-          case 'Sol': return <Sun className="text-orange-500" size={18} />;
-          case 'Nublado': return <Cloud className="text-slate-500" size={18} />;
-          case 'Chuva': return <CloudRain className="text-blue-500" size={18} />;
-          case 'Neve': return <CloudSnow className="text-cyan-500" size={18} />;
-          default: return <Sun className="text-slate-400" size={18} />;
+          case 'Sol': return <Sun className="text-orange-500" size={16} />;
+          case 'Nublado': return <Cloud className="text-slate-500" size={16} />;
+          case 'Chuva': return <CloudRain className="text-blue-500" size={16} />;
+          case 'Neve': return <CloudSnow className="text-cyan-500" size={16} />;
+          default: return <Sun className="text-slate-400" size={16} />;
       }
   };
 
@@ -277,17 +285,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       return Object.values(wf).reduce((a, b) => a + b, 0);
   };
 
-  const getTypeStyles = (log: DailyLog) => {
-      if (log.type === 'Intercorrência') {
-          if (log.isResolved) {
-              return 'border-l-4 border-l-green-500 bg-green-50/30 border-green-100';
-          }
-          return 'border-l-4 border-l-red-500 bg-red-50/30 border-red-200';
-      }
-      if (log.type === 'Alerta') return 'border-l-4 border-l-orange-400 bg-orange-50/30';
-      return 'border-l-4 border-l-pms-500';
-  };
-
   const getSeverityColor = (s: IssueSeverity) => {
       switch(s) {
           case 'Baixa': return 'bg-blue-100 text-blue-700 border-blue-200';
@@ -298,10 +295,8 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       }
   }
 
-  // RENDER HELPERS
   const renderIssueModalContent = () => (
       <>
-          {/* STATUS TOGGLE (RESOLVED / OPEN) */}
           <div className="bg-slate-100 p-3 rounded-lg border border-slate-200 mb-4 flex justify-between items-center">
               <div className="flex flex-col">
                   <span className="text-xs font-bold text-slate-500 uppercase">Status Atual</span>
@@ -322,7 +317,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </button>
           </div>
 
-          {/* Top Row: Date & Category */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                   <label className="block text-xs font-bold text-red-800 mb-1">Data da Ocorrência</label>
@@ -350,7 +344,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </div>
           </div>
 
-          {/* Severity Selector */}
           <div className="bg-red-50/50 p-3 rounded-lg border border-red-100">
               <label className="block text-xs font-bold text-red-800 mb-2 flex items-center gap-1">
                   <Flame size={14} /> Nível de Gravidade
@@ -375,7 +368,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </div>
           </div>
 
-          {/* Impacts Selector */}
           <div>
               <label className="block text-xs font-bold text-slate-600 mb-2 flex items-center gap-1">
                   <AlertOctagon size={14} /> Áreas Impactadas
@@ -397,7 +389,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </div>
           </div>
 
-          {/* Description */}
           <div>
               <label className="block text-xs font-bold text-slate-600 mb-1">Descrição Detalhada do Incidente</label>
               <textarea 
@@ -408,7 +399,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               />
           </div>
 
-          {/* Action Plan */}
           <div>
               <label className="block text-xs font-bold text-green-700 mb-1 flex items-center gap-1">
                  <ShieldCheck size={14} /> Plano de Ação Imediata / Solução
@@ -425,7 +415,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
 
   const renderStandardLogContent = () => (
       <>
-          {/* Date & Type */}
           <div className="grid grid-cols-2 gap-4">
               <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">Data</label>
@@ -453,7 +442,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </div>
           </div>
 
-          {/* Weather */}
           <div>
               <label className="block text-xs font-bold text-slate-500 mb-2">Clima / Tempo</label>
               <div className="grid grid-cols-4 gap-2">
@@ -470,7 +458,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </div>
           </div>
 
-          {/* WORKFORCE SECTION */}
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 relative">
               {autofillNotice && (
                   <div className="absolute -top-3 left-4 right-4 bg-blue-600 text-white text-[10px] py-1 px-3 rounded-full shadow-md flex items-center justify-center gap-1 animate-in fade-in slide-in-from-top-2 z-10">
@@ -480,26 +467,26 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               <label className="block text-xs font-bold text-slate-700 mb-2 flex items-center gap-2">
                   <HardHat size={14} /> Efetivo do Dia (Quantidades)
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {WORKFORCE_ROLES_LIST.map(role => {
                       const count = workforce[role] || 0;
                       return (
-                          <div key={role} className="flex items-center justify-between bg-white p-2 rounded border border-slate-200 shadow-sm">
-                              <span className="text-xs font-medium text-slate-700">{role}</span>
-                              <div className="flex items-center gap-2">
+                          <div key={role} className="flex items-center justify-between bg-white p-1.5 rounded border border-slate-200 shadow-sm">
+                              <span className="text-[10px] font-medium text-slate-700 truncate max-w-[70px]" title={role}>{role}</span>
+                              <div className="flex items-center gap-1">
                                   <button 
                                     onClick={() => updateWorkforce(role, -1)}
-                                    className={`p-1 rounded-full ${count > 0 ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-slate-100 text-slate-300'}`}
+                                    className={`p-0.5 rounded-full ${count > 0 ? 'bg-red-100 text-red-600 hover:bg-red-200' : 'bg-slate-100 text-slate-300'}`}
                                     disabled={count === 0}
                                   >
-                                      <Minus size={12} />
+                                      <Minus size={10} />
                                   </button>
-                                  <span className="text-sm font-bold w-4 text-center">{count}</span>
+                                  <span className="text-xs font-bold w-3 text-center">{count}</span>
                                   <button 
                                     onClick={() => updateWorkforce(role, 1)}
-                                    className="p-1 rounded-full bg-green-100 text-green-600 hover:bg-green-200"
+                                    className="p-0.5 rounded-full bg-green-100 text-green-600 hover:bg-green-200"
                                   >
-                                      <Plus size={12} />
+                                      <Plus size={10} />
                                   </button>
                               </div>
                           </div>
@@ -508,7 +495,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </div>
           </div>
 
-          {/* Employees Working (Specific Names) */}
           <div>
               <label className="block text-xs font-bold text-slate-500 mb-2">Equipe Interna (Nominal)</label>
               <div className="grid grid-cols-2 gap-2 max-h-24 overflow-y-auto border border-slate-200 rounded-lg p-2 bg-slate-50">
@@ -527,7 +513,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               </div>
           </div>
 
-          {/* Content */}
           <div>
               <label className="block text-xs font-bold text-slate-500 mb-1">Descrição das Atividades</label>
               <textarea 
@@ -538,7 +523,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
               />
           </div>
 
-          {/* Related Task */}
           <div>
               <label className="block text-xs font-bold text-slate-500 mb-1">Vincular Tarefa (Opcional)</label>
               <select 
@@ -556,185 +540,235 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
   );
 
   return (
-    <div className="max-w-3xl mx-auto pb-20">
+    <div className="max-w-4xl mx-auto pb-20">
+      {/* KPI DASHBOARD (COCKPIT) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+              <span className="text-xs font-bold text-slate-400 uppercase">Dias de Obra</span>
+              <div className="flex items-center gap-2 mt-1">
+                  <Calendar size={18} className="text-pms-600"/>
+                  <span className="text-2xl font-bold text-slate-800">{stats.totalDays}</span>
+              </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+              <span className="text-xs font-bold text-slate-400 uppercase">Dias de Chuva</span>
+              <div className="flex items-center gap-2 mt-1">
+                  <Droplets size={18} className="text-blue-500"/>
+                  <span className="text-2xl font-bold text-slate-800">{stats.rainyDays}</span>
+              </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+              <span className="text-xs font-bold text-slate-400 uppercase">Média Efetivo</span>
+              <div className="flex items-center gap-2 mt-1">
+                  <HardHat size={18} className="text-orange-500"/>
+                  <span className="text-2xl font-bold text-slate-800">{stats.avgHeadcount}</span>
+              </div>
+          </div>
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center relative overflow-hidden">
+              {stats.incidents > 0 && <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full m-2 animate-pulse"></div>}
+              <span className="text-xs font-bold text-slate-400 uppercase">Intercorrências</span>
+              <div className="flex items-center gap-2 mt-1">
+                  <Siren size={18} className="text-red-500"/>
+                  <span className="text-2xl font-bold text-red-600">{stats.incidents}</span>
+              </div>
+          </div>
+      </div>
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h2 className="text-xl font-bold text-slate-800">Diário de Obra</h2>
-        {/* Hide buttons for Clients */}
+        <div>
+            <h2 className="text-xl font-bold text-slate-800">Linha do Tempo</h2>
+            <p className="text-xs text-slate-500">Registro histórico das atividades diárias.</p>
+        </div>
         {currentUser.category !== 'CLIENT' && (
             <div className="flex gap-2 w-full sm:w-auto">
                 <button 
                     onClick={() => handleOpenModal('Intercorrência')}
-                    className="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 shadow-md transition-all animate-in fade-in group"
+                    className="flex-1 sm:flex-none bg-white border border-red-200 hover:bg-red-50 text-red-600 px-4 py-2 rounded-lg flex items-center justify-center gap-2 shadow-sm transition-all text-sm font-bold"
                 >
-                    <Siren size={18} className="group-hover:animate-pulse" />
+                    <AlertTriangle size={16} />
                     Intercorrência
                 </button>
                 <button 
                     onClick={() => handleOpenModal()}
-                    className="flex-1 sm:flex-none bg-pms-orange hover:bg-orange-600 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 shadow-md transition-all"
+                    className="flex-1 sm:flex-none bg-pms-600 hover:bg-pms-500 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 shadow-md transition-all text-sm font-bold"
                 >
-                    <Camera size={18} />
-                    Novo Registro
+                    <Camera size={16} />
+                    Novo Diário
                 </button>
             </div>
         )}
       </div>
 
-      <div className="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent">
+      <div className="space-y-4">
         {logs.length === 0 && (
-             <div className="text-center py-10 text-slate-400 bg-white rounded-xl border border-slate-200 shadow-sm relative z-10">
+             <div className="text-center py-12 text-slate-400 bg-white rounded-xl border border-slate-200 border-dashed">
+                <BarChart3 size={32} className="mx-auto mb-2 opacity-20"/>
                 <p>Nenhum registro encontrado para esta obra.</p>
              </div>
         )}
 
         {logs.map((log) => {
+          const isExpanded = expandedLogId === log.id;
           const author = users.find(u => u.id === log.authorId);
-          const relatedTask = log.relatedTaskId ? tasks.find(t => t.id === log.relatedTaskId) : null;
           const headcount = getTotalHeadcount(log.workforce);
           const isIssue = log.type === 'Intercorrência';
           const canEdit = currentUser.id === log.authorId || currentUser.role === 'ADMIN';
           
           return (
-            <div key={log.id} onClick={() => canEdit && handleEditClick(log)} className={`relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group ${canEdit ? 'cursor-pointer' : ''}`}>
-                
-                {/* Icon/Dot on Timeline */}
-                <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 ${
+            <div 
+                key={log.id} 
+                className={`bg-white rounded-lg border shadow-sm transition-all overflow-hidden group ${
                     isIssue 
-                        ? (log.isResolved ? 'bg-green-100 border-green-500 text-green-600' : 'bg-red-100 border-red-500 text-red-600') 
-                        : 'bg-slate-100 border-white text-slate-500'
-                }`}>
-                    {isIssue ? <AlertOctagon size={20}/> : getWeatherIcon(log.weather)}
-                </div>
+                        ? (log.isResolved ? 'border-l-4 border-l-green-500 border-slate-200' : 'border-l-4 border-l-red-500 border-red-200 bg-red-50/10') 
+                        : 'border-l-4 border-l-pms-600 border-slate-200 hover:border-slate-300'
+                }`}
+            >
+                {/* COMPACT HEADER ROW (ALWAYS VISIBLE) */}
+                <div 
+                    className="p-3 flex items-center gap-4 cursor-pointer"
+                    onClick={() => toggleLogExpansion(log.id)}
+                >
+                    {/* Date Box */}
+                    <div className="flex flex-col items-center justify-center min-w-[3.5rem] text-slate-600">
+                        <span className="text-[10px] uppercase font-bold">{new Date(log.date).toLocaleDateString('pt-BR', { month: 'short' })}</span>
+                        <span className="text-lg font-bold leading-none">{new Date(log.date).getDate()}</span>
+                        <span className="text-[10px] opacity-70">{new Date(log.date).toLocaleDateString('pt-BR', { weekday: 'short' }).slice(0,3)}</span>
+                    </div>
 
-                {/* Content Card */}
-                <div className={`w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow border border-slate-200 ${getTypeStyles(log)}`}>
-                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100/50">
-                        {author && <img src={author.avatar} alt={author.name} className="w-6 h-6 rounded-full" />}
-                        <span className="text-xs font-bold text-slate-700">{author?.name ? author.name.split(' ')[0] : 'Autor Desconhecido'}</span>
-                        <span className="text-xs text-slate-400 ml-auto flex items-center gap-1">
-                            <Calendar size={10}/> {new Date(log.date).toLocaleDateString('pt-BR')}
-                        </span>
+                    {/* Divider */}
+                    <div className="w-px h-8 bg-slate-200 hidden sm:block"></div>
+
+                    {/* Main Info */}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                            {isIssue ? (
+                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border flex items-center gap-1 ${log.isResolved ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
+                                    {log.isResolved ? <ShieldCheck size={10}/> : <Siren size={10}/>} {log.issueCategory || 'Intercorrência'}
+                                </span>
+                            ) : (
+                                <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 flex items-center gap-1">
+                                    {getWeatherIcon(log.weather)} {log.weather}
+                                </span>
+                            )}
+                            
+                            {!isIssue && headcount > 0 && (
+                                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-100 flex items-center gap-1">
+                                    <HardHat size={10}/> {headcount}
+                                </span>
+                            )}
+
+                            {log.images.length > 0 && (
+                                <span className="text-[10px] text-slate-400 flex items-center gap-1 ml-auto sm:ml-0">
+                                    <Camera size={10}/> {log.images.length}
+                                </span>
+                            )}
+                        </div>
+                        
+                        <p className="text-sm text-slate-700 font-medium truncate pr-4">
+                            {log.content.split('\n')[0]}
+                        </p>
+                    </div>
+
+                    {/* Expand/Actions */}
+                    <div className="flex items-center gap-2 pl-2 border-l border-slate-100">
                         {canEdit && (
                             <button 
-                                className="text-slate-400 hover:text-pms-600 ml-2 p-1"
-                                title="Editar Registro"
+                                onClick={(e) => handleEditClick(e, log)}
+                                className="p-1.5 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded transition-colors"
                             >
-                                <Edit2 size={14} />
+                                <Edit2 size={16} />
                             </button>
                         )}
+                        <button className={`p-1.5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                            <ChevronDown size={20} />
+                        </button>
                     </div>
+                </div>
 
-                    {/* Metadata Chips */}
-                    <div className="flex flex-wrap gap-2 mb-3">
-                        {!isIssue && log.weather && (
-                            <span className="text-[10px] bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded flex items-center gap-1 text-slate-600">
-                                {getWeatherIcon(log.weather)} {log.weather}
-                            </span>
-                        )}
-                        {relatedTask && (
-                             <span className="text-[10px] bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded flex items-center gap-1 text-blue-700 max-w-[150px] truncate">
-                                <Briefcase size={10} /> {relatedTask.title}
-                             </span>
-                        )}
-                        {/* Headcount Chip */}
-                        {headcount > 0 && (
-                            <span className="text-[10px] bg-orange-50 border border-orange-100 px-1.5 py-0.5 rounded flex items-center gap-1 text-orange-700 font-bold">
-                                <HardHat size={10} /> {headcount} operários
-                            </span>
-                        )}
-                        {/* Issue Category & Severity Chip */}
-                        {isIssue && log.issueCategory && (
-                            <>
-                                <span className="text-[10px] bg-red-100 border border-red-200 px-1.5 py-0.5 rounded flex items-center gap-1 text-red-700 font-bold uppercase">
-                                    <AlertTriangle size={10} /> {log.issueCategory}
-                                </span>
-                                {log.severity && (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold uppercase flex items-center gap-1 ${getSeverityColor(log.severity)}`}>
-                                        <Flame size={10} /> {log.severity}
-                                    </span>
-                                )}
-                            </>
-                        )}
-                    </div>
-
-                    {/* WORKFORCE DISPLAY (Only for normal logs usually) */}
-                    {log.workforce && Object.keys(log.workforce).length > 0 && (
-                        <div className="mb-3 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Efetivo do Dia:</span>
-                            <div className="flex flex-wrap gap-2">
+                {/* EXPANDED DETAILS */}
+                {isExpanded && (
+                    <div className="px-4 pb-4 pt-0 animate-in slide-in-from-top-2 border-t border-slate-100 bg-slate-50/30">
+                        
+                        {/* Workforce Breakdown (Standard Log) */}
+                        {!isIssue && log.workforce && (
+                            <div className="mt-3 mb-3 flex flex-wrap gap-2">
                                 {Object.entries(log.workforce).map(([role, count]) => (
-                                    <span key={role} className="text-xs bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700 shadow-sm flex items-center gap-1">
-                                        <span className="font-bold text-pms-600">{count}x</span> {role}
+                                    <span key={role} className="text-xs bg-white border border-slate-200 px-2 py-1 rounded text-slate-600 shadow-sm">
+                                        <b>{count}</b> {role}
                                     </span>
                                 ))}
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    <p className="text-slate-600 text-sm mb-3 leading-relaxed whitespace-pre-wrap">
-                        {log.content}
-                    </p>
-
-                    {/* Action Plan Display */}
-                    {isIssue && log.actionPlan && (
-                        <div className="bg-green-50 border-l-2 border-green-500 p-2 mb-3 rounded-r text-xs">
-                            <span className="font-bold text-green-800 block mb-1">Plano de Ação:</span>
-                            <p className="text-green-700">{log.actionPlan}</p>
-                        </div>
-                    )}
-
-                    {/* Impacts Display */}
-                    {isIssue && log.impacts && log.impacts.length > 0 && (
-                        <div className="flex gap-1 mb-3">
-                            {log.impacts.map(imp => (
-                                <span key={imp} title={`Impacto: ${imp}`} className="bg-slate-100 text-slate-500 p-1 rounded border border-slate-200">
-                                    {getImpactIcon(imp)}
-                                </span>
-                            ))}
-                        </div>
-                    )}
-
-                    {log.images.length > 0 && (
-                        <div className="grid grid-cols-3 gap-2 mt-2">
-                            {log.images.map((img, idx) => (
-                                <div key={idx} className="aspect-square rounded-lg overflow-hidden border border-slate-100 relative group/img">
-                                    <img src={img} alt="Evidence" className="w-full h-full object-cover hover:scale-110 transition-transform cursor-pointer"/>
+                        {/* Issue Details */}
+                        {isIssue && (
+                            <div className="mt-3 mb-3 bg-white p-3 rounded border border-slate-200 shadow-sm">
+                                <div className="flex gap-2 mb-2">
+                                    {log.severity && <span className={`text-[10px] px-2 py-0.5 rounded border uppercase font-bold ${getSeverityColor(log.severity)}`}>Gravidade: {log.severity}</span>}
                                 </div>
-                            ))}
+                                {log.actionPlan && (
+                                    <div className="text-sm">
+                                        <span className="text-xs font-bold text-green-700 uppercase block mb-1">Plano de Ação:</span>
+                                        <p className="text-slate-700 bg-green-50 p-2 rounded border border-green-100">{log.actionPlan}</p>
+                                    </div>
+                                )}
+                                {log.impacts && (
+                                    <div className="flex gap-1 mt-2">
+                                        {log.impacts.map(imp => (
+                                            <span key={imp} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 flex items-center gap-1">
+                                                {getImpactIcon(imp)} {imp}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Full Description */}
+                        <div className="mt-3 text-sm text-slate-600 whitespace-pre-wrap leading-relaxed bg-white p-3 rounded border border-slate-100 shadow-sm">
+                            {log.content}
                         </div>
-                    )}
-                    
-                    <div className="mt-4 pt-2 border-t border-slate-100 flex justify-between items-center">
-                         <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold
-                             ${log.type === 'Intercorrência' 
-                                ? (log.isResolved ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200') 
-                                : (log.type === 'Alerta' ? 'bg-orange-100 text-orange-700' : 'bg-blue-50 text-blue-700')}`}>
-                            {isIssue ? (log.isResolved ? 'SANADO / RESOLVIDO' : 'EM ABERTO') : log.type}
-                        </span>
 
-                        {/* RESOLVE BUTTON FOR ISSUES (Fallback / Quick Action) */}
-                        {isIssue && !log.isResolved && currentUser.category !== 'CLIENT' && (
-                            <button 
-                                onClick={(e) => handleResolveIssue(e, log)}
-                                className="flex items-center gap-1 text-xs font-bold bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-500 shadow-sm transition-all z-20 relative"
-                            >
-                                <ShieldCheck size={14} /> Sanado
-                            </button>
+                        {/* Image Grid */}
+                        {log.images.length > 0 && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+                                {log.images.map((img, idx) => (
+                                    <div key={idx} className="aspect-square rounded-lg overflow-hidden border border-slate-200 relative group cursor-pointer">
+                                        <img src={img} alt="Evidence" className="w-full h-full object-cover hover:scale-110 transition-transform" loading="lazy" onClick={() => window.open(img, '_blank')}/>
+                                    </div>
+                                ))}
+                            </div>
                         )}
 
-                        {isIssue && log.isResolved && (
-                            <span className="text-[10px] text-green-600 flex items-center gap-1 font-bold">
-                                <CheckCircle2 size={12} /> Resolvido em {log.resolvedAt ? new Date(log.resolvedAt).toLocaleDateString('pt-BR') : ''}
-                            </span>
-                        )}
+                        {/* Footer: Author & Resolution */}
+                        <div className="mt-4 pt-2 border-t border-slate-200 flex justify-between items-center text-xs text-slate-400">
+                            <div className="flex items-center gap-2">
+                                {author && <img src={author.avatar} className="w-5 h-5 rounded-full border border-slate-300"/>}
+                                <span>Registrado por <b>{author?.name || 'Desconhecido'}</b></span>
+                            </div>
+                            
+                            {isIssue && !log.isResolved && currentUser.category !== 'CLIENT' && (
+                                <button 
+                                    onClick={(e) => handleResolveIssue(e, log)}
+                                    className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded font-bold shadow-sm transition-colors flex items-center gap-1"
+                                >
+                                    <ShieldCheck size={12}/> Marcar como Sanado
+                                </button>
+                            )}
+                            {isIssue && log.isResolved && (
+                                <span className="text-green-600 font-bold flex items-center gap-1">
+                                    <CheckCircle2 size={12}/> Resolvido em {new Date(log.resolvedAt!).toLocaleDateString('pt-BR')}
+                                </span>
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
           );
         })}
       </div>
 
-      {/* New/Edit Log Modal */}
+      {/* MODALS (UPLOAD & EDIT) - Reusing previous logic, keeping them intact */}
       {isModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
               <div className={`bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col border-t-8 ${type === 'Intercorrência' ? 'border-red-600' : 'border-pms-600'}`}>
@@ -749,17 +783,13 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                   </div>
 
                   <div className="overflow-y-auto flex-1 pr-2 space-y-4 custom-scroll">
-                      
-                      {/* CONDITIONAL RENDERING: ISSUE VS STANDARD LOG */}
                       {type === 'Intercorrência' ? renderIssueModalContent() : renderStandardLogContent()}
 
-                      {/* Photo Attachments Area (Common for both) */}
                       <div>
                         <label className={`block text-xs font-bold mb-2 ${type === 'Intercorrência' ? 'text-red-800' : 'text-slate-500'}`}>
                             {type === 'Intercorrência' ? 'Evidências do Problema (Fotos/Vídeos)' : 'Evidências Fotográficas'}
                         </label>
                         
-                        {/* Trigger Button */}
                         <button 
                             onClick={() => setIsUploadModalOpen(true)}
                             className={`w-full border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-all ${
@@ -770,10 +800,8 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                         >
                             <Camera size={24} className="mb-1"/>
                             <span className="text-xs font-bold">Adicionar Fotos ou Arquivos</span>
-                            <span className="text-[10px] opacity-70">Upload Direto</span>
                         </button>
 
-                        {/* Image Preview Grid */}
                         {formImages.length > 0 && (
                             <div className="grid grid-cols-4 gap-2 mt-3">
                                 {formImages.map((img, index) => (
@@ -793,12 +821,10 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                   </div>
 
                   <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
-                      {/* DELETE BUTTON (Only when editing) */}
                       {editingLog && (
                           <button 
                               onClick={handleDelete}
                               className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg font-medium flex items-center gap-2 mr-auto border border-transparent hover:border-red-200 transition-all"
-                              title="Excluir permanentemente"
                           >
                               <Trash2 size={18} />
                               <span className="hidden sm:inline">Excluir</span>
@@ -820,7 +846,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
           </div>
       )}
 
-      {/* UPLOAD / FILE SELECTION POPUP */}
       {isUploadModalOpen && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
               <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl">
@@ -832,7 +857,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                   </div>
 
                   <div className="space-y-4">
-                      {/* Option 1: Local Device */}
                       <div className={`bg-slate-50 p-4 rounded-lg border border-slate-200 text-center ${isProcessingImages ? 'opacity-50 pointer-events-none' : ''}`}>
                           <label className="cursor-pointer block">
                               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -840,9 +864,6 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                               </div>
                               <span className="block font-bold text-slate-700 text-sm">
                                   {isProcessingImages ? 'Enviando para Nuvem...' : 'Do seu Dispositivo'}
-                              </span>
-                              <span className="block text-xs text-slate-400 mt-1">
-                                  {isProcessingImages ? 'Aguarde um momento' : 'PC, Galeria ou Câmera'}
                               </span>
                               <input 
                                 type="file" 
@@ -861,9 +882,8 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                           <div className="flex-grow border-t border-slate-200"></div>
                       </div>
 
-                      {/* Option 2: External Link / Drive */}
                       <div>
-                          <label className="block text-xs font-bold text-slate-600 mb-1">Link Externo (Google Drive / Dropbox)</label>
+                          <label className="block text-xs font-bold text-slate-600 mb-1">Link Externo</label>
                           <div className="flex gap-2">
                               <div className="relative flex-1">
                                   <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
