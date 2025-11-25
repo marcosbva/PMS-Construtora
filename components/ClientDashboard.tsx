@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, User, MaterialOrder, OrderStatus, Material } from '../types';
-import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, Package, ChevronRight, ArrowRight, Home, Ruler, PaintBucket, CheckSquare } from 'lucide-react';
+import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, Package, ChevronRight, ArrowRight, Home, Ruler, PaintBucket, CheckSquare, Circle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface ClientDashboardProps {
@@ -79,11 +79,26 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
       return { totalContract, paid, remaining, percentPaid };
   }, [myFinance, myWork]);
 
-  // --- TIMELINE LOGIC (Inferred from Progress) ---
+  // --- TIMELINE LOGIC (Hybrid: Custom Stages or Inferred from Progress) ---
   const timelineStages = useMemo(() => {
       if (!myWork) return [];
+
+      // 1. CHECK FOR CUSTOM STAGES (New Feature)
+      if (myWork.stages && myWork.stages.length > 0) {
+          // Sort stages by order
+          const sortedStages = [...myWork.stages].sort((a,b) => a.order - b.order);
+          
+          return sortedStages.map(stage => ({
+              label: stage.name,
+              // Map custom status to visual status
+              status: stage.status === 'COMPLETED' ? 'DONE' : (stage.status === 'IN_PROGRESS' ? 'CURRENT' : 'WAITING'),
+              // Use generic icons or map based on name (optional complexity)
+              icon: stage.status === 'COMPLETED' ? <CheckCircle2 size={18}/> : (stage.status === 'IN_PROGRESS' ? <Clock size={18} className="animate-pulse"/> : <Circle size={18}/>)
+          }));
+      }
+
+      // 2. FALLBACK: Inferred from Progress Percentage
       const p = myWork.progress;
-      
       return [
           { label: 'Projetos', icon: <Ruler size={18}/>, status: p >= 10 ? 'DONE' : 'CURRENT' },
           { label: 'Fundação', icon: <ArrowRight size={18} className="rotate-90"/>, status: p >= 30 ? 'DONE' : (p >= 10 ? 'CURRENT' : 'WAITING') },
@@ -212,15 +227,15 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
               {activeTab === 'OVERVIEW' && (
                   <>
                     {/* 3. VISUAL TIMELINE */}
-                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
                         <h3 className="text-xl font-bold text-slate-800 mb-8">Etapas da Construção</h3>
-                        <div className="relative">
+                        <div className="relative min-w-[600px]">
                             {/* Line */}
                             <div className="absolute top-5 left-0 w-full h-1 bg-slate-100 rounded-full -z-0"></div>
                             
                             <div className="flex justify-between relative z-10">
                                 {timelineStages.map((stage, idx) => (
-                                    <div key={idx} className="flex flex-col items-center text-center group">
+                                    <div key={idx} className="flex flex-col items-center text-center group flex-1">
                                         <div className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center border-4 transition-all duration-500 ${
                                             stage.status === 'DONE' ? 'bg-green-500 border-green-100 text-white shadow-green-200 shadow-lg' :
                                             stage.status === 'CURRENT' ? 'bg-blue-600 border-blue-100 text-white shadow-blue-200 shadow-lg scale-110' :
@@ -435,6 +450,17 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
               <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 ease-in-out whitespace-nowrap font-bold text-sm">
                   Falar com Engenheiro
               </span>
+          </a>
+      )}
+      
+      {/* OFFICE PHONE */}
+      {officePhone && !waNumber && (
+          <a 
+            href={`tel:${officePhone}`}
+            className="fixed bottom-6 right-6 z-50 bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-full shadow-2xl transition-all transform hover:scale-110 flex items-center gap-2"
+            title="Ligar para Escritório"
+          >
+              <Phone size={24} />
           </a>
       )}
     </div>

@@ -105,6 +105,15 @@ export enum WorkStatus {
   COMPLETED = 'Concluída'
 }
 
+export type StageStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+
+export interface WorkStage {
+  id: string;
+  name: string;
+  status: StageStatus;
+  order: number;
+}
+
 export interface ConstructionWork {
   id: string;
   name: string;
@@ -122,6 +131,7 @@ export interface ConstructionWork {
   teamIds?: string[];
   driveLink?: string; // Link para Google Drive / Projetos
   contractUrl?: string; // Link para o Contrato (PDF/Imagem)
+  stages?: WorkStage[]; // Custom Stages Timeline
 }
 
 export enum TaskStatus {

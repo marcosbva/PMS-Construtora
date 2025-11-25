@@ -13,6 +13,7 @@ import { WorkOverview } from './components/WorkOverview';
 import { BudgetPlanner } from './components/BudgetPlanner';
 import { InventoryManager } from './components/InventoryManager';
 import { RentalControl } from './components/RentalControl';
+import { ProjectStages } from './components/ProjectStages';
 import { ClientDashboard } from './components/ClientDashboard';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
@@ -434,7 +435,7 @@ function App() {
                       </div>
                       
                       <div className="flex border-b border-slate-200 mb-4 overflow-x-auto hide-scrollbar">
-                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO', 'ALUGUEIS'].map(tab => (
+                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO', 'ALUGUEIS', 'CRONOGRAMA'].map(tab => (
                               <button 
                                 key={tab}
                                 onClick={() => setCurrentView(tab)}
@@ -445,6 +446,7 @@ function App() {
                                    tab === 'DIARIO' ? 'Diário de Obra' : 
                                    tab === 'ORCAMENTO' ? 'Orçamento' :
                                    tab === 'ALUGUEIS' ? 'Aluguéis' :
+                                   tab === 'CRONOGRAMA' ? 'Cronograma' :
                                    'Financeiro'}
                               </button>
                           ))}
@@ -510,7 +512,13 @@ function App() {
                                 onAdd={(r) => api.createRental(r)}
                                 onUpdate={(r) => api.updateRental(r)}
                                 onDelete={(id) => api.deleteRental(id)}
-                                onAddFinance={(f) => api.createFinance(f)} // PASSING FINANCE CREATION HANDLER
+                                onAddFinance={(f) => api.createFinance(f)}
+                              />
+                          )}
+                          {currentView === 'CRONOGRAMA' && (
+                              <ProjectStages
+                                work={works.find(w => w.id === activeWorkId)!}
+                                onUpdateWork={(w) => api.updateWork(w)}
                               />
                           )}
                       </div>
