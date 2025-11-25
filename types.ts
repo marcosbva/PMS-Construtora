@@ -329,6 +329,15 @@ export enum InventoryStatus {
 
 export type RealEstateStatus = 'EM_CONSTRUCAO' | 'PRONTO' | 'ALUGADO' | 'A_VENDA' | 'VENDIDO';
 
+export interface InventoryMovement {
+  id: string;
+  date: string;
+  action: 'MOVIMENTACAO' | 'MANUTENCAO' | 'CRIACAO' | 'ATUALIZACAO';
+  description: string;
+  previousLocation?: string;
+  newLocation?: string;
+}
+
 export interface InventoryItem {
   id: string;
   assetType?: AssetType; // Defaults to EQUIPMENT for compatibility
@@ -347,6 +356,7 @@ export interface InventoryItem {
   currentWorkId?: string;
   currentPartnerId?: string;
   estimatedValue?: number; // Current Asset Value (Equipment)
+  history?: InventoryMovement[]; // New: Tracking history
 
   // Real Estate Specific
   developmentName?: string; // Empreendimento

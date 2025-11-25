@@ -2,6 +2,7 @@
 import { initializeApp, getApps, getApp, FirebaseApp, deleteApp } from "firebase/app";
 import { getFirestore, Firestore } from "firebase/firestore";
 import { getAuth, Auth, createUserWithEmailAndPassword, signOut, updatePassword } from "firebase/auth";
+import { getStorage, FirebaseStorage } from "firebase/storage";
 
 // Configuração Fixa (Hardcoded)
 // Credenciais limpas e corrigidas para garantir conexão
@@ -17,6 +18,7 @@ const firebaseConfig = {
 let app: FirebaseApp;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
+let storage: FirebaseStorage | null = null;
 
 // Inicialização Robusta (Singleton Pattern para evitar erros de re-init no React/Vite)
 try {
@@ -30,11 +32,27 @@ try {
         console.log("✅ Firebase inicializado com sucesso.");
     }
     
-    db = getFirestore(app);
-    auth = getAuth(app);
+    // Initializing services individually to prevent one failure from crashing everything
+    try {
+        db = getFirestore(app);
+    } catch (e) {
+        console.error("❌ Falha ao inicializar Firestore:", e);
+    }
+
+    try {
+        auth = getAuth(app);
+    } catch (e) {
+        console.error("❌ Falha ao inicializar Auth:", e);
+    }
+
+    try {
+        storage = getStorage(app);
+    } catch (e) {
+        console.error("❌ Falha ao inicializar Storage:", e);
+    }
     
 } catch (error) {
-    console.error("❌ Erro CRÍTICO ao inicializar Firebase:", error);
+    console.error("❌ Erro CRÍTICO ao inicializar Firebase App:", error);
     // Em caso de erro, db e auth permanecem null e o app entra em modo Offline/Local
 }
 
@@ -50,6 +68,13 @@ export const getDb = (): Firestore | null => {
  */
 export const getAuthInstance = (): Auth | null => {
     return auth;
+};
+
+/**
+ * Retorna a instância de Storage se estiver conectada.
+ */
+export const getStorageInstance = (): FirebaseStorage | null => {
+    return storage;
 };
 
 /**

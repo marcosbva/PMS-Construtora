@@ -1,5 +1,4 @@
 
-
 import { 
   collection, 
   getDocs, 
@@ -16,7 +15,8 @@ import {
   onSnapshot,
   Firestore
 } from "firebase/firestore";
-import { getDb } from "./firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getDb, getStorageInstance } from "./firebase";
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, FinanceCategoryDefinition, WorkBudget, InventoryItem, RentalItem } from "../types";
 
 const COLLECTIONS = {
@@ -30,7 +30,8 @@ const COLLECTIONS = {
   CATEGORIES: 'categories',
   BUDGETS: 'budgets',
   INVENTORY: 'inventory',
-  RENTALS: 'rentals'
+  RENTALS: 'rentals',
+  SETTINGS: 'settings' // New collection for global settings
 };
 
 // Helper to remove undefined fields which Firestore hates
@@ -41,6 +42,39 @@ const cleanData = <T>(data: T): T => {
 
 export const api = {
   isOnline: () => !!getDb(),
+
+  // --- FILE UPLOAD (FIREBASE STORAGE) ---
+  uploadImage: async (file: File, path: string): Promise<string> => {
+      const storage = getStorageInstance();
+      if (!storage) throw new Error("Storage não disponível (Modo Offline)");
+      
+      const storageRef = ref(storage, path);
+      
+      // Upload raw bytes
+      await uploadBytes(storageRef, file);
+      
+      // Get URL
+      return await getDownloadURL(storageRef);
+  },
+
+  // --- COMPANY SETTINGS ---
+  getCompanySettings: async () => {
+      const db = getDb();
+      if (!db) return null;
+      const docRef = doc(db, COLLECTIONS.SETTINGS, 'company_info');
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+          return snap.data();
+      }
+      return null;
+  },
+  
+  updateCompanySettings: async (settings: { name?: string; logoUrl?: string; primaryColor?: string }) => {
+      const db = getDb();
+      if (!db) return;
+      const docRef = doc(db, COLLECTIONS.SETTINGS, 'company_info');
+      await setDoc(docRef, settings, { merge: true });
+  },
 
   // --- USERS ---
   subscribeToUsers: (callback: (users: User[]) => void) => {

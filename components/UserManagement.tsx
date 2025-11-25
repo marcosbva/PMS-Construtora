@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition, RolePermissionsMap, AppPermissions, DailyLog } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck } from 'lucide-react';
 import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSecondaryAuthUser } from '../services/firebase';
 import { api } from '../services/api';
 
@@ -95,10 +95,27 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Permission Editing State
   const [localPermissions, setLocalPermissions] = useState<RolePermissionsMap>(permissions);
 
+  // Company Settings State
+  const [companyName, setCompanyName] = useState('');
+  const [companyLogo, setCompanyLogo] = useState('');
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
   // Update local permissions if parent state changes (sync)
   useEffect(() => {
       setLocalPermissions(permissions);
   }, [permissions]);
+
+  // Load Company Settings on Tab Change
+  useEffect(() => {
+      if (activeTab === 'SETTINGS') {
+          api.getCompanySettings().then(settings => {
+              if (settings) {
+                  setCompanyName(settings.name || '');
+                  setCompanyLogo(settings.logoUrl || '');
+              }
+          });
+      }
+  }, [activeTab]);
 
   // --- FORM STATES ---
   const [userName, setUserName] = useState('');
@@ -211,6 +228,36 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         };
         reader.readAsDataURL(file);
     }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+          const file = e.target.files[0];
+          setIsUploadingLogo(true);
+          try {
+              const url = await api.uploadImage(file, `logos/company_logo_${currentUser.id}_${Date.now()}`);
+              setCompanyLogo(url);
+          } catch (error: any) {
+              alert("Erro ao enviar logo: " + error.message);
+          } finally {
+              setIsUploadingLogo(false);
+          }
+      }
+  };
+
+  const handleSaveSettings = async () => {
+      setIsSaving(true);
+      try {
+          await api.updateCompanySettings({
+              name: companyName,
+              logoUrl: companyLogo
+          });
+          alert("Configurações salvas com sucesso!");
+      } catch (error) {
+          alert("Erro ao salvar configurações.");
+      } finally {
+          setIsSaving(false);
+      }
   };
 
   const generateTemporaryPassword = () => {
@@ -592,35 +639,118 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             {/* SETTINGS TAB */}
             {activeTab === 'SETTINGS' && (
                 <div className="animate-fade-in space-y-8">
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                        <div>
-                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                            {isCloudConnected ? <Cloud size={24} className="text-green-600" /> : <Database size={24} className="text-red-600" />}
-                            Conexão Nuvem
-                        </h3>
-                        <p className="text-sm text-slate-500">{isCloudConnected ? 'Conectado e sincronizando.' : 'Modo Local.'}</p>
+                    {/* Connection Status */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <div>
+                            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                {isCloudConnected ? <Cloud size={24} className="text-green-600" /> : <Database size={24} className="text-red-600" />}
+                                Conexão Nuvem
+                            </h3>
+                            <p className="text-sm text-slate-500">{isCloudConnected ? 'Conectado e sincronizando.' : 'Modo Local.'}</p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${isCloudConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                <div className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-green-600 animate-pulse' : 'bg-red-600'}`}></div>
+                                {isCloudConnected ? 'ONLINE' : 'OFFLINE'}
+                            </div>
                         </div>
-                        <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${isCloudConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                            <div className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-green-600 animate-pulse' : 'bg-red-600'}`}></div>
-                            {isCloudConnected ? 'ONLINE' : 'OFFLINE'}
+                        <div className="p-6">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between bg-orange-50 border border-orange-200 p-4 rounded-lg">
+                                <div>
+                                    <h4 className="text-orange-800 font-bold flex items-center gap-2"><AlertTriangle size={18}/> Diagnóstico de Dados</h4>
+                                    <p className="text-sm text-orange-700 mt-1">Use esta opção para restaurar configurações padrão.</p>
+                                </div>
+                                <button 
+                                    onClick={() => api.restoreDefaults()}
+                                    className="mt-3 md:mt-0 flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold transition-all shadow-sm"
+                                >
+                                    <RefreshCw size={18} /> Restaurar Sistema
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <div className="p-6">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between bg-orange-50 border border-orange-200 p-4 rounded-lg">
+
+                    {/* COMPANY SETTINGS / VISUAL IDENTITY */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                             <div>
-                                <h4 className="text-orange-800 font-bold flex items-center gap-2"><AlertTriangle size={18}/> Diagnóstico de Dados</h4>
-                                <p className="text-sm text-orange-700 mt-1">Use esta opção para restaurar configurações padrão.</p>
+                                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                    <Palette size={24} className="text-pms-600" />
+                                    Identidade Visual & Dados
+                                </h3>
+                                <p className="text-sm text-slate-500">Personalize o nome e a logo que aparecem no sistema.</p>
                             </div>
                             <button 
-                                onClick={() => api.restoreDefaults()}
-                                className="mt-3 md:mt-0 flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold transition-all shadow-sm"
+                                onClick={handleSaveSettings}
+                                disabled={isSaving || isUploadingLogo}
+                                className="px-4 py-2 bg-pms-600 hover:bg-pms-500 text-white rounded-lg font-bold flex items-center gap-2 shadow-md disabled:opacity-50"
                             >
-                                <RefreshCw size={18} /> Restaurar Sistema
+                                {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18} />}
+                                Salvar Dados
                             </button>
                         </div>
+                        
+                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* Logo Upload */}
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Logo da Empresa</label>
+                                <div className="flex items-center gap-4">
+                                    <div className="relative w-32 h-32 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 flex items-center justify-center overflow-hidden group">
+                                        {isUploadingLogo ? (
+                                            <div className="flex flex-col items-center text-pms-600">
+                                                <Loader2 size={24} className="animate-spin mb-1" />
+                                                <span className="text-[10px] font-bold">Enviando...</span>
+                                            </div>
+                                        ) : companyLogo ? (
+                                            <img src={companyLogo} alt="Logo" className="w-full h-full object-contain p-2" />
+                                        ) : (
+                                            <div className="text-slate-400 text-center">
+                                                <Upload size={24} className="mx-auto mb-1"/>
+                                                <span className="text-[10px]">Upload Logo</span>
+                                            </div>
+                                        )}
+                                        
+                                        <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white font-bold text-xs">
+                                            Alterar
+                                            <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} disabled={isUploadingLogo} />
+                                        </label>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-xs text-slate-500 mb-2 leading-relaxed">
+                                            Recomendado: PNG Transparente ou JPG.<br/>
+                                            Tamanho ideal: 500x500px.
+                                        </p>
+                                        {companyLogo && (
+                                            <button 
+                                                onClick={() => setCompanyLogo('')}
+                                                className="text-xs text-red-600 hover:underline font-bold"
+                                            >
+                                                Remover Logo
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Company Info Inputs */}
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Nome da Construtora</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
+                                        placeholder="Ex: PMS Engenharia"
+                                        value={companyName}
+                                        onChange={(e) => setCompanyName(e.target.value)}
+                                    />
+                                </div>
+                                <div className="bg-blue-50 p-3 rounded border border-blue-100 text-xs text-blue-700 flex gap-2">
+                                    <ShieldCheck size={16} className="shrink-0 mt-0.5"/>
+                                    <span>Essas informações aparecerão no cabeçalho do sistema, nos relatórios PDF e na tela de login.</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
                 </div>
             )}
 
