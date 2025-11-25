@@ -315,7 +315,9 @@ export interface WorkBudget {
   version?: number;
 }
 
-// --- INVENTORY TYPES (ESTOQUE PRÓPRIO) ---
+// --- INVENTORY & REAL ESTATE TYPES ---
+
+export type AssetType = 'EQUIPMENT' | 'REAL_ESTATE';
 
 export enum InventoryStatus {
   AVAILABLE = 'Disponível',
@@ -325,19 +327,35 @@ export enum InventoryStatus {
   LOANED = 'Emprestado'
 }
 
+export type RealEstateStatus = 'EM_CONSTRUCAO' | 'PRONTO' | 'ALUGADO' | 'A_VENDA' | 'VENDIDO';
+
 export interface InventoryItem {
   id: string;
+  assetType?: AssetType; // Defaults to EQUIPMENT for compatibility
+  
+  // Common Fields
   name: string;
-  category: string; // e.g. "Ferramenta Elétrica", "Andaimes", "Máquinas Pesadas"
-  brand?: string;
-  serialNumber?: string;
-  status: InventoryStatus;
-  currentWorkId?: string; // null means "Depósito/Warehouse"
-  currentPartnerId?: string; // null means no partner
-  lastMovementDate: string;
-  purchaseDate?: string;
+  category: string; // Equipment: Type | Real Estate: 'Planta', 'Pronto', etc.
   imageUrl?: string;
   notes?: string;
+  lastMovementDate: string;
+
+  // Equipment Specific
+  brand?: string;
+  serialNumber?: string;
+  status: InventoryStatus | RealEstateStatus; // Polymorphic Status
+  currentWorkId?: string;
+  currentPartnerId?: string;
+  estimatedValue?: number; // Current Asset Value (Equipment)
+
+  // Real Estate Specific
+  developmentName?: string; // Empreendimento
+  unitNumber?: string; // Unidade (Apt 101)
+  developerName?: string; // Construtora Origem
+  purchaseValue?: number; // Valor Contrato (Liability)
+  amountPaid?: number; // Valor já pago (Equity)
+  keyDeliveryDate?: string; // Previsão chaves
+  documentLink?: string; // Drive Link
 }
 
 // --- RENTAL CONTROL TYPES (ALUGUEIS) ---

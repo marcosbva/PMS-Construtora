@@ -14,7 +14,8 @@ import {
   Calendar,
   CheckCircle2,
   BellRing,
-  Truck
+  Truck,
+  Building2
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -30,7 +31,7 @@ import {
   Legend 
 } from 'recharts';
 import { api } from '../services/api';
-import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, MaterialOrder, OrderStatus, RentalItem, RentalStatus } from '../types';
+import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, MaterialOrder, OrderStatus, RentalItem, RentalStatus, InventoryItem } from '../types';
 
 // Updated colors to match new Brand Identity (Gold Primary)
 const PIE_COLORS = ['#c59d45', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308'];
@@ -40,6 +41,7 @@ interface KPIState {
   pendingExpense: number;
   cashBalance: number;
   activeAlerts: number;
+  totalAssets: number; // New KPI
 }
 
 interface ChartData {
@@ -51,11 +53,12 @@ interface DashboardProps {
   works: ConstructionWork[];
   finance: FinancialRecord[];
   orders?: MaterialOrder[];
-  rentals?: RentalItem[]; // ADDED
+  rentals?: RentalItem[]; 
+  inventory?: InventoryItem[]; // Added Inventory prop
   onNavigate?: (view: string) => void; 
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [], rentals = [], onNavigate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [], rentals = [], inventory = [], onNavigate }) => {
   const [logsLoading, setLogsLoading] = useState(true);
   const [allLogs, setAllLogs] = useState<DailyLog[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
@@ -64,12 +67,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
     activeWorks: 0,
     pendingExpense: 0,
     cashBalance: 0,
-    activeAlerts: 0
+    activeAlerts: 0,
+    totalAssets: 0
   });
   const [charts, setCharts] = useState<ChartData>({
     costByWork: [],
     expensesByCategory: []
   });
+  
+  const [assetBreakdown, setAssetBreakdown] = useState({ equipment: 0, realEstate: 0 });
   
   const [nextExpenses, setNextExpenses] = useState<FinancialRecord[]>([]);
   const [expiringRentals, setExpiringRentals] = useState<RentalItem[]>([]);
@@ -90,11 +96,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
     const filteredFinance = selectedWorkId === 'ALL' ? finance : finance.filter(f => f.workId === selectedWorkId);
     const filteredLogs = selectedWorkId === 'ALL' ? allLogs : allLogs.filter(l => l.workId === selectedWorkId);
     const filteredRentals = selectedWorkId === 'ALL' ? rentals : rentals.filter(r => r.workId === selectedWorkId);
+    // Inventory is global, but could be filtered if assigned to work. For "Patrimony" it usually means everything the company owns.
+    // If a specific work is selected, we might show equipment *at that work*, but Real Estate is usually corporate level.
+    // For simplicity, let's keep Assets global in the main KPI, or filter by 'currentWorkId' if Work is selected.
+    
+    // Asset Logic:
+    let filteredInventory = inventory;
+    if (selectedWorkId !== 'ALL') {
+        filteredInventory = inventory.filter(i => i.currentWorkId === selectedWorkId);
+    }
 
-    calculateMetrics(filteredWorks, filteredFinance, filteredLogs, filteredRentals);
-  }, [works, finance, allLogs, orders, rentals, selectedWorkId, logsLoading]);
+    calculateMetrics(filteredWorks, filteredFinance, filteredLogs, filteredRentals, filteredInventory);
+  }, [works, finance, allLogs, orders, rentals, inventory, selectedWorkId, logsLoading]);
 
-  const calculateMetrics = (currentWorks: ConstructionWork[], currentFinance: FinancialRecord[], currentLogs: DailyLog[], currentRentals: RentalItem[]) => {
+  const calculateMetrics = (currentWorks: ConstructionWork[], currentFinance: FinancialRecord[], currentLogs: DailyLog[], currentRentals: RentalItem[], currentInventory: InventoryItem[]) => {
       const activeWorksCount = currentWorks.filter(w => w.status !== 'Concluída').length;
 
       const pendingExpenseTotal = currentFinance
@@ -112,6 +127,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
       const cash = totalIncome - totalExpense;
 
       const alertsCount = currentLogs.filter(l => l.type === 'Intercorrência' && !l.isResolved).length;
+
+      // ASSET CALCULATION
+      let equipmentVal = 0;
+      let realEstateEquity = 0;
+
+      currentInventory.forEach(item => {
+          if (item.assetType === 'REAL_ESTATE') {
+              realEstateEquity += (item.amountPaid || 0);
+          } else {
+              equipmentVal += (item.estimatedValue || 0);
+          }
+      });
+      
+      setAssetBreakdown({ equipment: equipmentVal, realEstate: realEstateEquity });
 
       const upcoming = currentFinance
         .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
@@ -168,7 +197,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
         activeWorks: activeWorksCount,
         pendingExpense: pendingExpenseTotal,
         cashBalance: cash,
-        activeAlerts: alertsCount
+        activeAlerts: alertsCount,
+        totalAssets: equipmentVal + realEstateEquity
       });
 
       setCharts({
@@ -209,6 +239,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
                 ))}
             </select>
         </div>
+      </div>
+
+      {/* ASSETS SUMMARY CARD (New Feature) */}
+      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl p-6 shadow-lg text-white relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
+          <div className="flex flex-col md:flex-row justify-between items-center relative z-10">
+              <div className="mb-4 md:mb-0">
+                  <h3 className="text-pms-300 text-sm font-bold uppercase tracking-wider mb-1 flex items-center gap-2">
+                      <Building2 size={16} /> Patrimônio & Ativos
+                  </h3>
+                  <p className="text-3xl font-bold">R$ {kpis.totalAssets.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                  <p className="text-xs text-slate-400 mt-1">Valor total acumulado (Pago/Quitado)</p>
+              </div>
+              
+              <div className="flex gap-6 text-sm">
+                  <div className="text-right">
+                      <span className="text-slate-400 block text-xs uppercase font-bold">Imóveis (Equity)</span>
+                      <span className="font-bold text-white text-lg">R$ {assetBreakdown.realEstate.toLocaleString('pt-BR', { notation: 'compact' })}</span>
+                  </div>
+                  <div className="text-right border-l border-slate-600 pl-6">
+                      <span className="text-slate-400 block text-xs uppercase font-bold">Maquinário</span>
+                      <span className="font-bold text-white text-lg">R$ {assetBreakdown.equipment.toLocaleString('pt-BR', { notation: 'compact' })}</span>
+                  </div>
+              </div>
+          </div>
       </div>
 
       {/* ALERTS SECTION (Expiring Rentals) */}

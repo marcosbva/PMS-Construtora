@@ -1,9 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition, RolePermissionsMap, AppPermissions, DailyLog } from '../types';
 import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy } from 'lucide-react';
 import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSecondaryAuthUser } from '../services/firebase';
 import { api } from '../services/api';
-import { WorkforceSummary } from './WorkforceSummary';
 
 // Missing Component Definition
 interface TabButtonProps {
@@ -401,261 +401,251 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       </div>
 
       <div className="flex-1 overflow-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="w-full space-y-6">
             
-            {/* Main Content Area (Spans 3 cols or Full) */}
-            <div className={`space-y-6 ${activeTab === 'INTERNAL' || activeTab === 'CLIENTS' || activeTab === 'SUPPLIERS' ? 'lg:col-span-3' : 'lg:col-span-4'}`}>
-                {/* MATERIALS TAB */}
-                {activeTab === 'MATERIALS' && (
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
-                                <tr>
-                                    <th className="px-6 py-4">Item / Descrição</th>
-                                    <th className="px-6 py-4">Categoria</th>
-                                    <th className="px-6 py-4">Unidade</th>
-                                    <th className="px-6 py-4">Preço Est.</th>
-                                    <th className="px-6 py-4 text-right">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {materials.map(mat => (
-                                    <tr key={mat.id} className="hover:bg-slate-50">
-                                        <td className="px-6 py-4">
-                                            <div className="font-bold text-slate-800">{mat.name}</div>
-                                            <div className="text-xs text-slate-500">{mat.brand || '-'}</div>
-                                        </td>
-                                        <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs border border-slate-200">{mat.category}</span></td>
-                                        <td className="px-6 py-4 text-sm text-slate-600">{mat.unit}</td>
-                                        <td className="px-6 py-4 font-medium text-green-600">R$ {mat.priceEstimate?.toFixed(2) || '-'}</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <button onClick={() => openMaterialModal(mat)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded"><Edit2 size={16} /></button>
-                                                <button onClick={() => onDeleteMaterial(mat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {materials.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum material cadastrado.</td></tr>}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-
-                {/* USER LISTS */}
-                {(activeTab === 'INTERNAL' || activeTab === 'CLIENTS' || activeTab === 'SUPPLIERS') && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 animate-fade-in">
-                    {getFilteredUsers().map(user => (
-                        <div key={user.id} className={`bg-white p-6 rounded-xl shadow-sm border transition-all relative overflow-hidden ${user.status === 'PENDING' ? 'border-orange-300 ring-2 ring-orange-100' : 'border-slate-200'}`}>
-                            {user.status === 'PENDING' && <div className="absolute top-0 left-0 w-full bg-orange-500 text-white text-[10px] font-bold text-center py-1">AGUARDANDO APROVAÇÃO</div>}
-                            {user.status === 'BLOCKED' && <div className="absolute top-0 left-0 w-full bg-red-500 text-white text-[10px] font-bold text-center py-1">BLOQUEADO</div>}
-                            <div className="flex items-start justify-between mt-2">
-                            <div className="flex items-center gap-3">
-                                <img src={user.avatar} alt={user.name} className="w-12 h-12 rounded-full border border-slate-200 object-cover" />
-                                <div>
-                                    <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                        {user.name}
-                                        {currentUser.id === user.id && <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded">(Você)</span>}
-                                    </h3>
-                                    <p className="text-sm text-slate-500">{user.email}</p>
-                                </div>
-                            </div>
-                            <div className="flex gap-1">
-                                <button onClick={() => openUserModal(user)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                                
-                                {/* DELETE BUTTON - Now checks permission matrix OR Admin role */}
-                                {(currentUser.role === UserRole.ADMIN || permissions[currentUser.role]?.manageUsers) && user.id !== currentUser.id && (
-                                    <button 
-                                        onClick={() => onDeleteUser(user.id)} 
-                                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                        title="Excluir Usuário"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                )}
-                            </div>
-                            </div>
-                            <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
-                            <div>
-                                <span className="text-xs font-bold text-slate-400 block uppercase">Categoria</span>
-                                <span className="text-xs font-bold text-slate-700">{user.category}</span>
-                            </div>
-                            <div className="text-right">
-                                <span className="text-xs font-bold text-slate-400 block uppercase">Acesso</span>
-                                <span className={`text-xs px-2 py-1 rounded-full font-bold ${
-                                    user.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-700' : 
-                                    user.role === UserRole.EDITOR ? 'bg-blue-100 text-blue-700' : 
-                                    'bg-slate-100 text-slate-500'
-                                }`}>
-                                    {user.role}
-                                </span>
-                            </div>
-                            </div>
-                            {user.status === 'PENDING' && <button onClick={() => openUserModal(user)} className="mt-4 w-full bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold py-2 rounded-lg flex items-center justify-center gap-2 animate-pulse"><UserCheck size={16} /> Analisar Cadastro</button>}
-                        </div>
-                        ))}
-                        {getFilteredUsers().length === 0 && (
-                            <div className="col-span-full p-10 text-center bg-slate-50 rounded-xl border border-slate-200 text-slate-400">
-                                <Users size={32} className="mx-auto mb-2 opacity-20" />
-                                Nenhum usuário encontrado nesta categoria.
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* PERMISSIONS TAB */}
-                {activeTab === 'PERMISSIONS' && currentUser.role === UserRole.ADMIN && (
-                    <div className="animate-fade-in space-y-6">
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                                <div>
-                                    <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                                        <Shield size={20} className="text-pms-600"/> Matriz de Permissões
-                                    </h3>
-                                    <p className="text-sm text-slate-500">Defina o que cada cargo pode fazer no sistema.</p>
-                                </div>
-                                <button 
-                                    onClick={savePermissions}
-                                    disabled={isSaving}
-                                    className="px-4 py-2 bg-pms-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-pms-500 transition-colors disabled:opacity-50"
-                                >
-                                    {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18} />}
-                                    Salvar Alterações
-                                </button>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-100 text-xs uppercase text-slate-500 font-bold">
-                                        <tr>
-                                            <th className="px-6 py-4 w-1/3">Funcionalidade</th>
-                                            <th className="px-6 py-4 text-center text-purple-600">ADMIN (Total)</th>
-                                            <th className="px-6 py-4 text-center text-blue-600">EDITOR (Equipe)</th>
-                                            <th className="px-6 py-4 text-center text-slate-600">VIEWER (Visitante)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {(Object.keys(PERMISSION_LABELS) as Array<keyof AppPermissions>).map((key) => (
-                                            <tr key={key} className="hover:bg-slate-50">
-                                                <td className="px-6 py-4 text-sm font-bold text-slate-700">
-                                                    {PERMISSION_LABELS[key]}
-                                                    <p className="text-[10px] font-normal text-slate-400 font-mono">{key}</p>
-                                                </td>
-                                                {/* ADMIN COLUMN (Usually Locked) */}
-                                                <td className="px-6 py-4 text-center bg-purple-50/30">
-                                                    <div className="flex justify-center">
-                                                        <button 
-                                                            onClick={() => togglePermission(UserRole.ADMIN, key)}
-                                                            className={`p-1 rounded transition-colors ${localPermissions[UserRole.ADMIN][key] ? 'text-green-600' : 'text-red-300'}`}
-                                                            // We generally don't want to disable Admin permissions easily to prevent lockout, 
-                                                            // but let's allow it if the user insists, except SystemAdmin
-                                                            disabled={key === 'isSystemAdmin' || key === 'manageUsers'}
-                                                        >
-                                                            {localPermissions[UserRole.ADMIN][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                                {/* EDITOR COLUMN */}
-                                                <td className="px-6 py-4 text-center bg-blue-50/30">
-                                                    <div className="flex justify-center">
-                                                        <button 
-                                                            onClick={() => togglePermission(UserRole.EDITOR, key)}
-                                                            className={`p-1 rounded transition-colors ${localPermissions[UserRole.EDITOR][key] ? 'text-green-600' : 'text-slate-300 hover:text-slate-500'}`}
-                                                            disabled={key === 'isSystemAdmin'}
-                                                        >
-                                                            {localPermissions[UserRole.EDITOR][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                                {/* VIEWER COLUMN */}
-                                                <td className="px-6 py-4 text-center">
-                                                    <div className="flex justify-center">
-                                                        <button 
-                                                            onClick={() => togglePermission(UserRole.VIEWER, key)}
-                                                            className={`p-1 rounded transition-colors ${localPermissions[UserRole.VIEWER][key] ? 'text-green-600' : 'text-slate-300 hover:text-slate-500'}`}
-                                                            disabled={key === 'isSystemAdmin'}
-                                                        >
-                                                            {localPermissions[UserRole.VIEWER][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div className="p-4 bg-yellow-50 text-yellow-800 text-sm flex items-center gap-2 border-t border-yellow-100">
-                                <AlertTriangle size={16} />
-                                <strong>Nota:</strong> Usuários da categoria <strong>CLIENTE</strong> terão sempre acesso limitado, independentemente desta configuração, por segurança.
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* SETTINGS TAB */}
-                {activeTab === 'SETTINGS' && (
-                    <div className="animate-fade-in space-y-8">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                                {isCloudConnected ? <Cloud size={24} className="text-green-600" /> : <Database size={24} className="text-red-600" />}
-                                Conexão Nuvem
-                            </h3>
-                            <p className="text-sm text-slate-500">{isCloudConnected ? 'Conectado e sincronizando.' : 'Modo Local.'}</p>
-                            </div>
-                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${isCloudConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                <div className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-green-600 animate-pulse' : 'bg-red-600'}`}></div>
-                                {isCloudConnected ? 'ONLINE' : 'OFFLINE'}
-                            </div>
-                        </div>
-                        <div className="p-6">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between bg-orange-50 border border-orange-200 p-4 rounded-lg">
-                                <div>
-                                    <h4 className="text-orange-800 font-bold flex items-center gap-2"><AlertTriangle size={18}/> Diagnóstico de Dados</h4>
-                                    <p className="text-sm text-orange-700 mt-1">Use esta opção para restaurar configurações padrão.</p>
-                                </div>
-                                <button 
-                                    onClick={() => api.restoreDefaults()}
-                                    className="mt-3 md:mt-0 flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold transition-all shadow-sm"
-                                >
-                                    <RefreshCw size={18} /> Restaurar Sistema
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    </div>
-                )}
-
-                {/* CATEGORIES TAB */}
-                {activeTab === 'FINANCE_CATEGORIES' && (
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
-                        <table className="w-full text-left">
-                            <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
-                            <tr><th className="px-6 py-4">Nome da Categoria</th><th className="px-6 py-4">Tipo</th><th className="px-6 py-4 text-right">Ações</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                            {financeCategories.map(cat => (
-                                <tr key={cat.id} className="hover:bg-slate-50">
-                                    <td className="px-6 py-4 font-bold text-slate-800">{cat.name}</td>
-                                    <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs">{cat.type === 'BOTH' ? 'Receita & Despesa' : cat.type === 'EXPENSE' ? 'Despesa' : 'Receita'}</span></td>
+            {/* MATERIALS TAB */}
+            {activeTab === 'MATERIALS' && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
+                            <tr>
+                                <th className="px-6 py-4">Item / Descrição</th>
+                                <th className="px-6 py-4">Categoria</th>
+                                <th className="px-6 py-4">Unidade</th>
+                                <th className="px-6 py-4">Preço Est.</th>
+                                <th className="px-6 py-4 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {materials.map(mat => (
+                                <tr key={mat.id} className="hover:bg-slate-50">
+                                    <td className="px-6 py-4">
+                                        <div className="font-bold text-slate-800">{mat.name}</div>
+                                        <div className="text-xs text-slate-500">{mat.brand || '-'}</div>
+                                    </td>
+                                    <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs border border-slate-200">{mat.category}</span></td>
+                                    <td className="px-6 py-4 text-sm text-slate-600">{mat.unit}</td>
+                                    <td className="px-6 py-4 font-medium text-green-600">R$ {mat.priceEstimate?.toFixed(2) || '-'}</td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2">
-                                            <button onClick={() => openCategoryModal(cat)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded"><Edit2 size={16}/></button>
-                                            <button onClick={() => onDeleteCategory && onDeleteCategory(cat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                                            <button onClick={() => openMaterialModal(mat)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded"><Edit2 size={16} /></button>
+                                            <button onClick={() => onDeleteMaterial(mat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
                                         </div>
                                     </td>
                                 </tr>
                             ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
+                            {materials.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum material cadastrado.</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
-            {/* SIDEBAR - VISIBLE ON USER TABS */}
+            {/* USER LISTS */}
             {(activeTab === 'INTERNAL' || activeTab === 'CLIENTS' || activeTab === 'SUPPLIERS') && (
-                <div className="hidden lg:block space-y-6">
-                    <WorkforceSummary logs={logs} title="Efetivo Global" />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                {getFilteredUsers().map(user => (
+                    <div key={user.id} className={`bg-white p-6 rounded-xl shadow-sm border transition-all relative overflow-hidden ${user.status === 'PENDING' ? 'border-orange-300 ring-2 ring-orange-100' : 'border-slate-200'}`}>
+                        {user.status === 'PENDING' && <div className="absolute top-0 left-0 w-full bg-orange-500 text-white text-[10px] font-bold text-center py-1">AGUARDANDO APROVAÇÃO</div>}
+                        {user.status === 'BLOCKED' && <div className="absolute top-0 left-0 w-full bg-red-500 text-white text-[10px] font-bold text-center py-1">BLOQUEADO</div>}
+                        <div className="flex items-start justify-between mt-2">
+                        <div className="flex items-center gap-3">
+                            <img src={user.avatar} alt={user.name} className="w-12 h-12 rounded-full border border-slate-200 object-cover" />
+                            <div>
+                                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                    {user.name}
+                                    {currentUser.id === user.id && <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded">(Você)</span>}
+                                </h3>
+                                <p className="text-sm text-slate-500">{user.email}</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-1">
+                            <button onClick={() => openUserModal(user)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
+                            
+                            {/* DELETE BUTTON - Now checks permission matrix OR Admin role */}
+                            {(currentUser.role === UserRole.ADMIN || permissions[currentUser.role]?.manageUsers) && user.id !== currentUser.id && (
+                                <button 
+                                    onClick={() => onDeleteUser(user.id)} 
+                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Excluir Usuário"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            )}
+                        </div>
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between items-center">
+                        <div>
+                            <span className="text-xs font-bold text-slate-400 block uppercase">Categoria</span>
+                            <span className="text-xs font-bold text-slate-700">{user.category}</span>
+                        </div>
+                        <div className="text-right">
+                            <span className="text-xs font-bold text-slate-400 block uppercase">Acesso</span>
+                            <span className={`text-xs px-2 py-1 rounded-full font-bold ${
+                                user.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-700' : 
+                                user.role === UserRole.EDITOR ? 'bg-blue-100 text-blue-700' : 
+                                'bg-slate-100 text-slate-500'
+                            }`}>
+                                {user.role}
+                            </span>
+                        </div>
+                        </div>
+                        {user.status === 'PENDING' && <button onClick={() => openUserModal(user)} className="mt-4 w-full bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold py-2 rounded-lg flex items-center justify-center gap-2 animate-pulse"><UserCheck size={16} /> Analisar Cadastro</button>}
+                    </div>
+                    ))}
+                    {getFilteredUsers().length === 0 && (
+                        <div className="col-span-full p-10 text-center bg-slate-50 rounded-xl border border-slate-200 text-slate-400">
+                            <Users size={32} className="mx-auto mb-2 opacity-20" />
+                            Nenhum usuário encontrado nesta categoria.
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* PERMISSIONS TAB */}
+            {activeTab === 'PERMISSIONS' && currentUser.role === UserRole.ADMIN && (
+                <div className="animate-fade-in space-y-6">
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <div>
+                                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                    <Shield size={20} className="text-pms-600"/> Matriz de Permissões
+                                </h3>
+                                <p className="text-sm text-slate-500">Defina o que cada cargo pode fazer no sistema.</p>
+                            </div>
+                            <button 
+                                onClick={savePermissions}
+                                disabled={isSaving}
+                                className="px-4 py-2 bg-pms-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-pms-500 transition-colors disabled:opacity-50"
+                            >
+                                {isSaving ? <Loader2 size={18} className="animate-spin"/> : <Save size={18} />}
+                                Salvar Alterações
+                            </button>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-100 text-xs uppercase text-slate-500 font-bold">
+                                    <tr>
+                                        <th className="px-6 py-4 w-1/3">Funcionalidade</th>
+                                        <th className="px-6 py-4 text-center text-purple-600">ADMIN (Total)</th>
+                                        <th className="px-6 py-4 text-center text-blue-600">EDITOR (Equipe)</th>
+                                        <th className="px-6 py-4 text-center text-slate-600">VIEWER (Visitante)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {(Object.keys(PERMISSION_LABELS) as Array<keyof AppPermissions>).map((key) => (
+                                        <tr key={key} className="hover:bg-slate-50">
+                                            <td className="px-6 py-4 text-sm font-bold text-slate-700">
+                                                {PERMISSION_LABELS[key]}
+                                                <p className="text-[10px] font-normal text-slate-400 font-mono">{key}</p>
+                                            </td>
+                                            {/* ADMIN COLUMN (Usually Locked) */}
+                                            <td className="px-6 py-4 text-center bg-purple-50/30">
+                                                <div className="flex justify-center">
+                                                    <button 
+                                                        onClick={() => togglePermission(UserRole.ADMIN, key)}
+                                                        className={`p-1 rounded transition-colors ${localPermissions[UserRole.ADMIN][key] ? 'text-green-600' : 'text-red-300'}`}
+                                                        // We generally don't want to disable Admin permissions easily to prevent lockout, 
+                                                        // but let's allow it if the user insists, except SystemAdmin
+                                                        disabled={key === 'isSystemAdmin' || key === 'manageUsers'}
+                                                    >
+                                                        {localPermissions[UserRole.ADMIN][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                            {/* EDITOR COLUMN */}
+                                            <td className="px-6 py-4 text-center bg-blue-50/30">
+                                                <div className="flex justify-center">
+                                                    <button 
+                                                        onClick={() => togglePermission(UserRole.EDITOR, key)}
+                                                        className={`p-1 rounded transition-colors ${localPermissions[UserRole.EDITOR][key] ? 'text-green-600' : 'text-slate-300 hover:text-slate-500'}`}
+                                                        disabled={key === 'isSystemAdmin'}
+                                                    >
+                                                        {localPermissions[UserRole.EDITOR][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                            {/* VIEWER COLUMN */}
+                                            <td className="px-6 py-4 text-center">
+                                                <div className="flex justify-center">
+                                                    <button 
+                                                        onClick={() => togglePermission(UserRole.VIEWER, key)}
+                                                        className={`p-1 rounded transition-colors ${localPermissions[UserRole.VIEWER][key] ? 'text-green-600' : 'text-slate-300 hover:text-slate-500'}`}
+                                                        disabled={key === 'isSystemAdmin'}
+                                                    >
+                                                        {localPermissions[UserRole.VIEWER][key] ? <CheckSquare size={24}/> : <Square size={24}/>}
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-4 bg-yellow-50 text-yellow-800 text-sm flex items-center gap-2 border-t border-yellow-100">
+                            <AlertTriangle size={16} />
+                            <strong>Nota:</strong> Usuários da categoria <strong>CLIENTE</strong> terão sempre acesso limitado, independentemente desta configuração, por segurança.
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* SETTINGS TAB */}
+            {activeTab === 'SETTINGS' && (
+                <div className="animate-fade-in space-y-8">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <div>
+                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                            {isCloudConnected ? <Cloud size={24} className="text-green-600" /> : <Database size={24} className="text-red-600" />}
+                            Conexão Nuvem
+                        </h3>
+                        <p className="text-sm text-slate-500">{isCloudConnected ? 'Conectado e sincronizando.' : 'Modo Local.'}</p>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${isCloudConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            <div className={`w-2 h-2 rounded-full ${isCloudConnected ? 'bg-green-600 animate-pulse' : 'bg-red-600'}`}></div>
+                            {isCloudConnected ? 'ONLINE' : 'OFFLINE'}
+                        </div>
+                    </div>
+                    <div className="p-6">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between bg-orange-50 border border-orange-200 p-4 rounded-lg">
+                            <div>
+                                <h4 className="text-orange-800 font-bold flex items-center gap-2"><AlertTriangle size={18}/> Diagnóstico de Dados</h4>
+                                <p className="text-sm text-orange-700 mt-1">Use esta opção para restaurar configurações padrão.</p>
+                            </div>
+                            <button 
+                                onClick={() => api.restoreDefaults()}
+                                className="mt-3 md:mt-0 flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-bold transition-all shadow-sm"
+                            >
+                                <RefreshCw size={18} /> Restaurar Sistema
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            )}
+
+            {/* CATEGORIES TAB */}
+            {activeTab === 'FINANCE_CATEGORIES' && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+                    <table className="w-full text-left">
+                        <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
+                        <tr><th className="px-6 py-4">Nome da Categoria</th><th className="px-6 py-4">Tipo</th><th className="px-6 py-4 text-right">Ações</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                        {financeCategories.map(cat => (
+                            <tr key={cat.id} className="hover:bg-slate-50">
+                                <td className="px-6 py-4 font-bold text-slate-800">{cat.name}</td>
+                                <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs">{cat.type === 'BOTH' ? 'Receita & Despesa' : cat.type === 'EXPENSE' ? 'Despesa' : 'Receita'}</span></td>
+                                <td className="px-6 py-4 text-right">
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => openCategoryModal(cat)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded"><Edit2 size={16}/></button>
+                                        <button onClick={() => onDeleteCategory && onDeleteCategory(cat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={16}/></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
                 </div>
             )}
         </div>

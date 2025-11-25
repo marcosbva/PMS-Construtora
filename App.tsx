@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition, InventoryItem, RentalItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -326,6 +325,7 @@ function App() {
                     finance={finance} 
                     orders={orders}
                     rentals={rentals}
+                    inventory={inventory}
                     onNavigate={(view) => { setCurrentView(view); setActiveWorkId(null); }}
                   />
               )}
@@ -479,6 +479,7 @@ function App() {
                   <InventoryManager 
                     inventory={inventory}
                     works={works}
+                    users={users}
                     onAdd={(item) => api.createInventoryItem(item)}
                     onUpdate={(item) => api.updateInventoryItem(item)}
                     onDelete={(id) => api.deleteInventoryItem(id)}
