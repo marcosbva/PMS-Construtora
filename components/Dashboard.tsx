@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   Briefcase, 
@@ -10,7 +11,8 @@ import {
   Wallet,
   Clock,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  BellRing
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -26,7 +28,7 @@ import {
   Legend 
 } from 'recharts';
 import { api } from '../services/api';
-import { ConstructionWork, FinancialRecord, DailyLog, FinanceType } from '../types';
+import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, MaterialOrder, OrderStatus } from '../types';
 
 const PIE_COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308'];
 
@@ -45,9 +47,11 @@ interface ChartData {
 interface DashboardProps {
   works: ConstructionWork[];
   finance: FinancialRecord[];
+  orders?: MaterialOrder[];
+  onNavigate?: (view: string) => void; 
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [], onNavigate }) => {
   const [logsLoading, setLogsLoading] = useState(true);
   const [allLogs, setAllLogs] = useState<DailyLog[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
@@ -65,7 +69,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
   
   const [nextExpenses, setNextExpenses] = useState<FinancialRecord[]>([]);
 
-  // Fetch logs in real-time locally for the dashboard
   useEffect(() => {
     const unsubLogs = api.subscribeToAllLogs((logs) => {
         setAllLogs(logs);
@@ -75,7 +78,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
     return () => unsubLogs();
   }, []);
 
-  // Filter and Calculate Metrics when dependencies change
   useEffect(() => {
     if (logsLoading) return;
 
@@ -84,17 +86,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
     const filteredLogs = selectedWorkId === 'ALL' ? allLogs : allLogs.filter(l => l.workId === selectedWorkId);
 
     calculateMetrics(filteredWorks, filteredFinance, filteredLogs);
-  }, [works, finance, allLogs, selectedWorkId, logsLoading]);
+  }, [works, finance, allLogs, orders, selectedWorkId, logsLoading]);
 
   const calculateMetrics = (currentWorks: ConstructionWork[], currentFinance: FinancialRecord[], currentLogs: DailyLog[]) => {
-      // --- KPI CALCULATIONS ---
       const activeWorksCount = currentWorks.filter(w => w.status !== 'Concluída').length;
 
       const pendingExpenseTotal = currentFinance
         .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
         .reduce((acc, curr) => acc + curr.amount, 0);
 
-      // Cash Balance Calculation: (Paid Income) - (Paid Expenses)
       const totalIncome = currentFinance
         .filter(f => f.type === FinanceType.INCOME && f.status === 'Pago')
         .reduce((acc, curr) => acc + curr.amount, 0);
@@ -107,7 +107,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
 
       const alertsCount = currentLogs.filter(l => l.type === 'Intercorrência' && !l.isResolved).length;
 
-      // Upcoming Expenses (Top 5 PENDING EXPENSES sorted by Date)
       const upcoming = currentFinance
         .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
         .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
@@ -115,7 +114,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
       
       setNextExpenses(upcoming);
 
-      // --- CHARTS ---
       const workExpenses: Record<string, number> = {};
       const workNames: Record<string, string> = {};
       
@@ -177,7 +175,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
           <p className="text-slate-500">Visão executiva em tempo real.</p>
         </div>
 
-        {/* WORK FILTER */}
         <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
             <Filter size={18} className="text-slate-400 ml-1" />
             <select 
@@ -354,6 +351,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
                               <th className="px-6 py-3">Obra</th>
                               <th className="px-6 py-3">Início</th>
                               <th className="px-6 py-3">Término Prev.</th>
+                              <th className="px-6 py-3 text-center">Progresso</th>
                               <th className="px-6 py-3 text-right">Status</th>
                           </tr>
                       </thead>
@@ -365,6 +363,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
                                   <td className="px-6 py-3 font-medium text-slate-800">{work.name}</td>
                                   <td className="px-6 py-3 text-slate-600">{work.startDate ? new Date(work.startDate).toLocaleDateString('pt-BR') : '-'}</td>
                                   <td className="px-6 py-3 text-slate-600">{work.endDate ? new Date(work.endDate).toLocaleDateString('pt-BR') : '-'}</td>
+                                  <td className="px-6 py-3 text-center">
+                                      <div className="flex items-center justify-center gap-2">
+                                          <span className="text-sm font-bold text-slate-700">{work.progress}%</span>
+                                          <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden hidden sm:block">
+                                              <div 
+                                                  className="h-full bg-pms-600 rounded-full" 
+                                                  style={{ width: `${work.progress}%` }}
+                                              />
+                                          </div>
+                                      </div>
+                                  </td>
                                   <td className="px-6 py-3 text-right">
                                       <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
                                           work.status === 'Concluída' ? 'bg-green-100 text-green-700 border-green-200' :
@@ -377,7 +386,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance }) => {
                               </tr>
                           ))}
                           {works.length === 0 && (
-                              <tr><td colSpan={4} className="p-6 text-center text-slate-400">Nenhuma obra cadastrada.</td></tr>
+                              <tr><td colSpan={5} className="p-6 text-center text-slate-400">Nenhuma obra cadastrada.</td></tr>
                           )}
                       </tbody>
                   </table>

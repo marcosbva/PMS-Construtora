@@ -1,17 +1,19 @@
 
 import React, { useState, useEffect } from 'react';
-import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget } from '../types';
-import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, ExternalLink } from 'lucide-react';
+import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog } from '../types';
+import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator } from 'lucide-react';
 import { api } from '../services/api';
+import { WorkforceSummary } from './WorkforceSummary';
 
 interface WorkOverviewProps {
   work: ConstructionWork;
   users: User[]; // To select client
+  logs: DailyLog[]; // To calculate stats
   onUpdateWork: (work: ConstructionWork) => Promise<void>;
   onDeleteWork: (id: string) => Promise<void>;
 }
 
-export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, onUpdateWork, onDeleteWork }) => {
+export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, onUpdateWork, onDeleteWork }) => {
   const [formData, setFormData] = useState<ConstructionWork>(work);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -245,6 +247,7 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, onUpdat
 
         {/* Right Column: Status & Save */}
         <div className="space-y-6">
+            
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                 <h3 className="text-sm font-bold text-slate-800 mb-4 uppercase flex items-center gap-2">
                     <Save size={16} className="text-pms-600"/> Ações
@@ -293,32 +296,8 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, onUpdat
                 </button>
             </div>
 
-            <div className="bg-blue-50 rounded-xl border border-blue-100 p-6">
-                <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
-                    <UserIcon size={18} /> Equipe Vinculada
-                </h4>
-                <p className="text-xs text-blue-600 mb-4">
-                    Gerencie a equipe desta obra na aba "Configurações Globais".
-                </p>
-                <div className="flex -space-x-2 overflow-hidden">
-                    {(formData.teamIds || []).map((id, i) => {
-                        const member = users.find(u => u.id === id);
-                        if (!member) return null;
-                        return (
-                            <img 
-                                key={i} 
-                                className="inline-block h-8 w-8 rounded-full ring-2 ring-white" 
-                                src={member.avatar} 
-                                alt={member.name} 
-                                title={member.name}
-                            />
-                        );
-                    })}
-                    {(formData.teamIds?.length || 0) === 0 && (
-                        <span className="text-xs text-blue-400 italic">Nenhum membro vinculado.</span>
-                    )}
-                </div>
-            </div>
+            {/* WORKFORCE SUMMARY WIDGET */}
+            <WorkforceSummary logs={logs} title="Efetivo Acumulado" />
 
             {/* DELETE ZONE */}
             <div className="bg-red-50 rounded-xl border border-red-100 p-6 mt-4">

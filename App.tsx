@@ -77,22 +77,16 @@ function App() {
           else setFinanceCategories(cats);
       });
 
+      // Fetch global logs for global dashboard
+      const unsubAllLogs = api.subscribeToAllLogs(setLogs);
+
       setTimeout(() => setIsLoading(false), 800);
 
       return () => {
           unsubUsers(); unsubWorks(); unsubTasks(); unsubFinance(); 
-          unsubMaterials(); unsubOrders(); unsubCats();
+          unsubMaterials(); unsubOrders(); unsubCats(); unsubAllLogs();
       };
   }, []);
-
-  useEffect(() => {
-      if (activeWorkId && api.isOnline()) {
-          const unsubLogs = api.subscribeToWorkLogs(activeWorkId, setLogs);
-          return () => unsubLogs();
-      } else if (!activeWorkId) {
-          setLogs([]); 
-      }
-  }, [activeWorkId]);
 
   const handleLogin = (user: User) => setCurrentUser(user);
   
@@ -249,7 +243,12 @@ function App() {
 
           <div className="flex-1 overflow-auto p-4 md:p-8">
               {currentView === 'DASHBOARD' && !activeWorkId && (
-                  <Dashboard works={works} finance={finance} />
+                  <Dashboard 
+                    works={works} 
+                    finance={finance} 
+                    orders={orders} 
+                    onNavigate={(view) => { setCurrentView(view); setActiveWorkId(null); }}
+                  />
               )}
 
               {currentView === 'WORKS' && !activeWorkId && (
@@ -327,6 +326,7 @@ function App() {
                           {currentView === 'RESUMO' && (
                               <WorkOverview 
                                 work={works.find(w => w.id === activeWorkId)!}
+                                logs={logs.filter(l => l.workId === activeWorkId)}
                                 users={users}
                                 onUpdateWork={(w) => api.updateWork(w)}
                                 onDeleteWork={async (id) => { await handleDeleteWork(id); }}
@@ -346,7 +346,7 @@ function App() {
                           {currentView === 'DIARIO' && (
                               <DailyLogView 
                                 workId={activeWorkId}
-                                logs={logs} 
+                                logs={logs.filter(l => l.workId === activeWorkId)}
                                 users={users}
                                 tasks={tasks.filter(t => t.workId === activeWorkId)}
                                 currentUser={currentUser}
@@ -425,6 +425,7 @@ function App() {
                     users={users}
                     materials={materials}
                     orders={orders}
+                    logs={logs}
                     taskStatuses={DEFAULT_TASK_STATUSES}
                     financeCategories={financeCategories}
                     permissions={permissions}

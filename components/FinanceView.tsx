@@ -1,8 +1,9 @@
 
-import React, { useMemo, useState, useRef } from 'react';
-import { FinancialRecord, FinanceType, User, UserRole, ConstructionWork, FinanceCategoryDefinition } from '../types';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { FinancialRecord, FinanceType, User, UserRole, ConstructionWork, FinanceCategoryDefinition, WorkBudget } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from 'recharts';
-import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon, Filter, ArrowDown, Plus } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon, Filter, ArrowDown, Plus, BarChart3 } from 'lucide-react';
+import { api } from '../services/api';
 
 interface FinanceViewProps {
   records: FinancialRecord[];
@@ -32,6 +33,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
+  // Budget Data State for Linking
+  const [workBudget, setWorkBudget] = useState<WorkBudget | null>(null);
+
   // Form State
   const [type, setType] = useState<FinanceType>(FinanceType.EXPENSE);
   const [category, setCategory] = useState<string>('Material');
@@ -40,10 +44,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [dueDate, setDueDate] = useState('');
   const [status, setStatus] = useState<'Pendente' | 'Pago' | 'Atrasado'>('Pendente');
   const [selectedEntityId, setSelectedEntityId] = useState(''); // Supplier or Client ID
+  const [relatedBudgetCategoryId, setRelatedBudgetCategoryId] = useState(''); // New Link Field
   
   // Quick Category Add State
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Fetch Budget Categories if Work is selected
+  useEffect(() => {
+    if (work) {
+        api.getBudget(work.id).then(setWorkBudget).catch(err => console.error("Could not fetch budget", err));
+    }
+  }, [work]);
 
   // Calculate Totals
   const totals = useMemo(() => {
@@ -130,6 +142,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         setDueDate(record.dueDate);
         setStatus(record.status as any);
         setSelectedEntityId(record.entityId || '');
+        setRelatedBudgetCategoryId(record.relatedBudgetCategoryId || '');
     } else {
         setEditingId(null);
         setType(FinanceType.EXPENSE);
@@ -139,6 +152,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         setStatus('Pendente');
         setCategory(financeCategories[0]?.name || 'Material');
         setSelectedEntityId('');
+        setRelatedBudgetCategoryId('');
     }
     setIsModalOpen(true);
   };
@@ -156,7 +170,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       amount: parseFloat(amount),
       dueDate,
       status,
-      paidDate: status === 'Pago' ? (editingId ? records.find(r=>r.id===editingId)?.paidDate || dueDate : dueDate) : undefined
+      paidDate: status === 'Pago' ? (editingId ? records.find(r=>r.id===editingId)?.paidDate || dueDate : dueDate) : undefined,
+      relatedBudgetCategoryId: relatedBudgetCategoryId || undefined
     };
 
     if (editingId && onUpdateRecord) {
@@ -523,6 +538,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                                        <div className="text-xs text-slate-500 flex items-center gap-1">
                                            <UserIcon size={10}/> {name}
                                        </div>
+                                       {record.relatedBudgetCategoryId && (
+                                           <div className="mt-1 flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 w-fit px-1.5 py-0.5 rounded">
+                                               <BarChart3 size={10} /> Vinculado ao Orçamento
+                                           </div>
+                                       )}
                                    </td>
                                    <td className="px-6 py-4">
                                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">
@@ -737,6 +757,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                        </select>
                     </div>
                 </div>
+
+                {/* BUDGET LINKING (MACRO TASK) */}
+                {!isGlobal && workBudget && type === FinanceType.EXPENSE && (
+                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                        <label className="block text-sm font-bold text-blue-800 mb-1 flex items-center gap-2">
+                           <BarChart3 size={16} /> Vincular à Etapa do Orçamento (Macro Tarefa)
+                        </label>
+                        <select 
+                            className="w-full border border-blue-300 rounded-lg p-2.5 text-sm outline-none bg-white"
+                            value={relatedBudgetCategoryId}
+                            onChange={(e) => setRelatedBudgetCategoryId(e.target.value)}
+                        >
+                            <option value="">-- Sem vínculo (Despesa Geral) --</option>
+                            {workBudget.categories.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </select>
+                        <p className="text-[10px] text-blue-600 mt-1">
+                            Isso permite comparar o "Previsto vs Realizado" no módulo de Orçamentos.
+                        </p>
+                    </div>
+                )}
              </div>
 
              <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-slate-100">

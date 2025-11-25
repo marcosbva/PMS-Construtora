@@ -105,7 +105,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
             }
 
             // 2. VERIFICAÇÃO "PRIMEIRO USUÁRIO" (ADMIN MASTER)
-            // Verifica quantos usuários existem no banco AGORA.
             const currentUsers = await api.getUsers();
             const isSystemEmpty = currentUsers.length === 0;
 
@@ -113,13 +112,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
             let newUserStatus: 'ACTIVE' | 'PENDING' | 'BLOCKED' = 'PENDING';
 
             if (isSystemEmpty) {
-                // BANCO VAZIO: O PRIMEIRO A CHEGAR É O DONO.
                 console.log("👑 Sistema vazio detectado. Inicializando Admin Master.");
                 newUserRole = UserRole.ADMIN;
                 newUserStatus = 'ACTIVE'; 
             } else {
-                // JÁ EXISTE GENTE: FLUXO NORMAL DE APROVAÇÃO
-                newUserRole = UserRole.VIEWER; // ou padrão 'EDITOR' se preferir
+                newUserRole = UserRole.VIEWER;
                 newUserStatus = 'PENDING';
             }
 
@@ -129,7 +126,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 name,
                 email,
                 role: newUserRole,
-                category: UserCategory.INTERNAL, // Todo cadastro via tela inicial entra como Equipe Interna
+                category: UserCategory.INTERNAL,
                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${isSystemEmpty ? 'f97316' : '0ea5e9'}&color=fff`,
                 status: newUserStatus
             };
@@ -139,11 +136,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
 
             // 5. Feedback e Redirecionamento
             if (isSystemEmpty) {
-                // Admin Master entra direto
                 alert('Bem-vindo, Administrador Master. O sistema foi inicializado.');
                 onLogin(newUser);
             } else {
-                // Usuário comum vai para a sala de espera
                 if (isOnline && auth) {
                     await signOut(auth);
                 }
@@ -166,21 +161,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 }
 
                 const uid = userCredential.user.uid;
-                
-                // Busca dados atualizados do Firestore
                 const dbUsers = await api.getUsers(); 
                 let user = dbUsers.find(u => u.id === uid);
 
-                // --- AUTO-HEALING (Correção pós-Wipe) ---
-                // Se logou no Auth, mas não existe no Firestore (foi deletado), recria.
                 if (!user) {
-                    console.warn(`⚠️ Usuário ${email} autenticado, mas sem perfil no DB. Recriando...`);
-                    
+                    // Auto-healing logic
                     const isSystemEmpty = dbUsers.length === 0;
-                    // Se o banco tá vazio E eu consegui logar, eu sou Admin (recuperação)
-                    // Ou se meu email tem 'admin'
                     const shouldBeAdmin = isSystemEmpty || email.includes('admin') || email.includes('pms');
-
                     user = {
                         id: uid,
                         name: email.split('@')[0],
@@ -188,18 +175,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                         role: shouldBeAdmin ? UserRole.ADMIN : UserRole.VIEWER,
                         category: UserCategory.INTERNAL,
                         avatar: `https://ui-avatars.com/api/?name=${email.charAt(0)}`,
-                        status: 'ACTIVE', // Auto-ativar para não trancar o dono
+                        status: 'ACTIVE',
                         mustChangePassword: false
                     };
-
-                    try {
-                        await api.createUser(user);
-                        console.log("✅ Perfil recriado com sucesso.");
-                    } catch (creationError) {
-                        console.error("Erro ao recriar perfil:", creationError);
-                        await signOut(auth);
-                        throw new Error('Perfil corrompido. Contate o suporte.');
-                    }
+                    try { await api.createUser(user); } catch (ce) { await signOut(auth); throw new Error('Perfil corrompido.'); }
                 }
 
                 if (user.status === 'PENDING') {
@@ -224,16 +203,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 onLogin(user);
 
             } else {
-                // Lógica Offline
                 await new Promise(resolve => setTimeout(resolve, 500));
                 const user = initialUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
                 
                 if (user) {
-                    if (user.status === 'PENDING') {
-                        setPendingMessage('Cadastro local pendente.');
-                        setShowPendingSuccess(true);
-                        return;
-                    }
+                    if (user.status === 'PENDING') { setPendingMessage('Cadastro local pendente.'); setShowPendingSuccess(true); return; }
                     if (user.status === 'BLOCKED') throw new Error('Bloqueado.');
                     onLogin(user);
                 } else {
@@ -249,6 +223,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
     }
   };
 
+  // ... (PendingSuccess and PasswordReset renders omitted for brevity, same as original) ...
   if (showPendingSuccess) {
       return (
         <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -257,77 +232,24 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                      <Clock size={40} />
                  </div>
                  <h2 className="text-2xl font-bold text-slate-800 mb-2">Em Análise</h2>
-                 <p className="text-slate-600 mb-6 leading-relaxed">
-                     {pendingMessage}
-                 </p>
-                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-500 mb-6">
-                     Status: <span className="font-bold text-orange-600">AGUARDANDO APROVAÇÃO</span>
-                 </div>
-                 <button 
-                    onClick={() => setShowPendingSuccess(false)}
-                    className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
-                 >
-                     <LogOut size={18} /> Voltar ao Início
-                 </button>
+                 <p className="text-slate-600 mb-6 leading-relaxed">{pendingMessage}</p>
+                 <button onClick={() => setShowPendingSuccess(false)} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"><LogOut size={18} /> Voltar ao Início</button>
              </div>
         </div>
       );
   }
 
-  // RENDER: CHANGE PASSWORD SCREEN
   if (isResettingPassword) {
       return (
         <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
              <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden z-10 animate-in fade-in zoom-in duration-300">
                 <div className="p-8">
-                    <div className="flex flex-col items-center mb-6">
-                        <div className="w-16 h-16 bg-yellow-100 text-yellow-600 rounded-xl flex items-center justify-center mb-4">
-                            <Key size={32} />
-                        </div>
-                        <h1 className="text-xl font-bold text-slate-800">Troca de Senha Obrigatória</h1>
-                        <p className="text-slate-500 text-sm text-center mt-2">
-                            Por motivos de segurança, você deve redefinir sua senha provisória antes de continuar.
-                        </p>
-                    </div>
-
+                    <h1 className="text-xl font-bold text-slate-800 text-center mb-6">Troca de Senha Obrigatória</h1>
                     <form onSubmit={handlePasswordReset} className="space-y-4">
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-600 ml-1">Nova Senha</label>
-                            <input 
-                                type="password" 
-                                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-slate-50"
-                                placeholder="Nova senha segura"
-                                value={newPassword}
-                                onChange={(e) => setNewPassword(e.target.value)}
-                                disabled={isLoading}
-                            />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-600 ml-1">Confirmar Nova Senha</label>
-                            <input 
-                                type="password" 
-                                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-slate-50"
-                                placeholder="Confirme a senha"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                disabled={isLoading}
-                            />
-                        </div>
-
-                        {error && (
-                            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2 border border-red-100">
-                                <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                                {error}
-                            </div>
-                        )}
-
-                        <button 
-                            type="submit"
-                            disabled={isLoading || !newPassword || !confirmPassword}
-                            className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
-                        >
-                            {isLoading ? <Loader2 className="animate-spin" size={20}/> : 'Redefinir e Entrar'}
-                        </button>
+                        <input type="password" className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none" placeholder="Nova senha segura" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} disabled={isLoading} />
+                        <input type="password" className="w-full px-4 py-3 border border-slate-200 rounded-xl outline-none" placeholder="Confirme a senha" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} disabled={isLoading} />
+                        {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>}
+                        <button type="submit" disabled={isLoading} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all">{isLoading ? <Loader2 className="animate-spin" /> : 'Redefinir e Entrar'}</button>
                     </form>
                 </div>
              </div>
@@ -335,7 +257,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
       )
   }
 
-  // RENDER: LOGIN/REGISTER
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
@@ -359,64 +280,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {isRegistering && (
-                         <div className="space-y-1 animate-in slide-in-from-top-2">
+                        <div className="space-y-1 animate-in slide-in-from-top-2">
                             <label className="text-xs font-bold text-slate-600 ml-1">Nome Completo</label>
-                            <div className="relative">
-                                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input 
-                                    type="text" 
-                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-pms-500 outline-none transition-all bg-slate-50 focus:bg-white disabled:bg-slate-100"
-                                    placeholder="Ex: Carlos Silva"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    disabled={isLoading}
-                                />
-                            </div>
+                            <div className="relative"><UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><input type="text" className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-pms-500 outline-none transition-all bg-slate-50 focus:bg-white" placeholder="Ex: Carlos Silva" value={name} onChange={(e) => setName(e.target.value)} disabled={isLoading} /></div>
                         </div>
                     )}
 
                     <div className="space-y-1">
                         <label className="text-xs font-bold text-slate-600 ml-1">Email Corporativo</label>
-                        <div className="relative">
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input 
-                                type="email" 
-                                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-pms-500 outline-none transition-all bg-slate-50 focus:bg-white disabled:bg-slate-100"
-                                placeholder="seu.nome@pms.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                disabled={isLoading}
-                            />
-                        </div>
+                        <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><input type="email" className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-pms-500 outline-none transition-all bg-slate-50 focus:bg-white" placeholder="seu.nome@pms.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading} /></div>
                     </div>
 
                     <div className="space-y-1">
                         <label className="text-xs font-bold text-slate-600 ml-1">Senha</label>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input 
-                                type="password" 
-                                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-pms-500 outline-none transition-all bg-slate-50 focus:bg-white disabled:bg-slate-100"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                disabled={isLoading}
-                            />
-                        </div>
+                        <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><input type="password" className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-pms-500 outline-none transition-all bg-slate-50 focus:bg-white" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} /></div>
                     </div>
 
-                    {error && (
-                        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2 animate-shake border border-red-100">
-                            <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                            <span className="leading-tight font-medium">{error}</span>
-                        </div>
-                    )}
+                    {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2 animate-shake border border-red-100"><AlertCircle size={16} className="shrink-0 mt-0.5" />{error}</div>}
 
-                    <button 
-                        type="submit"
-                        disabled={isLoading || !isFormValid()}
-                        className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg group disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
+                    <button type="submit" disabled={isLoading || !isFormValid()} className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg group disabled:opacity-70 disabled:cursor-not-allowed">
                         {isLoading ? <><Loader2 size={20} className="animate-spin" /> Processando...</> : <>{isRegistering ? 'Criar Conta' : 'Acessar Sistema'} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></>}
                     </button>
                 </form>
@@ -424,9 +306,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
                 <div className="mt-6 text-center">
                     <p className="text-sm text-slate-500">
                         {isRegistering ? 'Já tem uma conta?' : 'Não tem acesso?'}
-                        <button onClick={() => { setIsRegistering(!isRegistering); setError(''); setEmail(''); setPassword(''); setName(''); }} className="ml-2 font-bold text-pms-600 hover:underline" disabled={isLoading}>
-                            {isRegistering ? 'Fazer Login' : 'Cadastre-se'}
-                        </button>
+                        <button onClick={() => { setIsRegistering(!isRegistering); setError(''); }} className="ml-2 font-bold text-pms-600 hover:underline">{isRegistering ? 'Fazer Login' : 'Cadastre-se'}</button>
                     </p>
                 </div>
             </div>

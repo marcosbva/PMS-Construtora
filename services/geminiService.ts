@@ -1,7 +1,6 @@
 
-
 import { GoogleGenAI } from "@google/genai";
-import { BudgetCategory } from "../types";
+import { BudgetCategory, ConstructionWork } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -132,5 +131,52 @@ export const generateBudgetStructure = async (workName: string, workDescription:
   } catch (error) {
     console.error("Gemini Budget Error:", error);
     return [];
+  }
+}
+
+/**
+ * Generates the text content for a formal commercial proposal (PDF)
+ */
+export const generateBudgetProposalText = async (work: ConstructionWork, categories: BudgetCategory[]) => {
+  try {
+    // Flatten items for context, but limit length to avoid token limits
+    const scopeSummary = categories.map(c => 
+      `- ${c.name}: ${c.items.length} itens previstos.`
+    ).join('\n');
+
+    const prompt = `
+      Atue como um Engenheiro e Gerente Comercial Sênior da PMS Construtora.
+      Escreva o texto para uma **Proposta Comercial Formal** para o cliente abaixo.
+
+      **Dados da Obra:**
+      Cliente: ${work.client || 'Cliente Final'}
+      Obra: ${work.name}
+      Endereço: ${work.address}
+      Prazo Estimado: ${work.startDate} a ${work.endDate} (se houver datas)
+
+      **Escopo Resumido:**
+      ${scopeSummary}
+
+      **Sua Tarefa:**
+      Gere um texto profissional formatado em Markdown contendo APENAS as seções de texto (não gere a tabela de preços, pois eu já tenho ela).
+      O texto deve conter:
+      1. **Apresentação**: Breve parágrafo formal apresentando a proposta.
+      2. **Metodologia Executiva**: Um parágrafo descrevendo que a obra seguirá normas técnicas (ABNT), com segurança e qualidade.
+      3. **Condições de Fornecimento**:
+         - Mencionar que materiais básicos e acabamentos serão definidos conforme cronograma.
+         - Mencionar que a mão de obra é especializada.
+      4. **Condições Gerais e Exclusões**:
+         - Liste 3 ou 4 exclusões padrão em orçamentos civis (ex: taxas de prefeitura, projetos não citados, imprevistos ocultos).
+      5. **Encerramento**: Cordial e profissional.
+
+      Tom de voz: Profissional, Seguro, Engenharia.
+      Não coloque cabeçalho ou rodapé. Apenas o corpo do texto.
+    `;
+
+    const response = await generateWithRetry('gemini-2.5-flash', prompt);
+    return response.text;
+  } catch (error) {
+    console.error("Gemini Proposal Error:", error);
+    return "## Erro na geração do texto\n\nNão foi possível gerar o texto da proposta com IA. Por favor, edite este campo manualmente com as condições comerciais.";
   }
 }

@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { ConstructionWork, WorkBudget, BudgetCategory, BudgetItem, Task, TaskStatus, TaskPriority } from '../types';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ConstructionWork, WorkBudget, BudgetCategory, BudgetItem, Task, TaskStatus, TaskPriority, FinancialRecord, FinanceType } from '../types';
 import { api } from '../services/api';
-import { generateBudgetStructure } from '../services/geminiService';
-import { Calculator, Plus, Save, BrainCircuit, ChevronDown, ChevronRight, Trash2, Download, RefreshCw, Loader2, DollarSign, FileSpreadsheet, LayoutList, X, FileText } from 'lucide-react';
+import { generateBudgetStructure, generateBudgetProposalText } from '../services/geminiService';
+import { Calculator, Plus, Save, BrainCircuit, ChevronDown, ChevronRight, Trash2, Download, RefreshCw, Loader2, DollarSign, FileSpreadsheet, LayoutList, X, FileText, AlertCircle, CheckCircle2, FileDown, Printer } from 'lucide-react';
 
 interface BudgetPlannerProps {
     works: ConstructionWork[];
@@ -17,9 +17,18 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
     const [isGenerating, setIsGenerating] = useState(false);
     const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
+    // Financial Data for Comparison
+    const [financialRecords, setFinancialRecords] = useState<FinancialRecord[]>([]);
+
     // AI Modal State
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [aiScopeText, setAiScopeText] = useState('');
+
+    // Proposal Modal State
+    const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
+    const [proposalText, setProposalText] = useState('');
+    const [isGeneratingProposal, setIsGeneratingProposal] = useState(false);
+    const printRef = useRef<HTMLDivElement>(null);
 
     const selectedWork = works.find(w => w.id === selectedWorkId);
 
@@ -34,12 +43,14 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
     useEffect(() => {
         if (!selectedWorkId) {
             setBudget(null);
+            setFinancialRecords([]);
             return;
         }
 
-        const loadBudget = async () => {
+        const loadData = async () => {
             setIsLoading(true);
             try {
+                // Load Budget
                 const existingBudget = await api.getBudget(selectedWorkId);
                 if (existingBudget) {
                     setBudget(existingBudget);
@@ -59,6 +70,11 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                         version: 1
                     });
                 }
+
+                // Load Financials for Comparison
+                const records = await api.getFinance();
+                setFinancialRecords(records.filter(r => r.workId === selectedWorkId && r.type === FinanceType.EXPENSE));
+
             } catch (error) {
                 console.error("Error loading budget", error);
             } finally {
@@ -66,7 +82,7 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
             }
         };
 
-        loadBudget();
+        loadData();
     }, [selectedWorkId]);
 
     // --- AI MODAL HANDLERS ---
@@ -144,6 +160,37 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         } finally {
             setIsGenerating(false);
         }
+    };
+
+    // --- PROPOSAL HANDLERS ---
+    const handleGenerateProposal = async () => {
+        if (!selectedWork || !budget) return;
+        setIsGeneratingProposal(true);
+        try {
+            const text = await generateBudgetProposalText(selectedWork, budget.categories);
+            setProposalText(text);
+            setIsProposalModalOpen(true);
+        } catch (error) {
+            alert("Erro ao gerar proposta.");
+        } finally {
+            setIsGeneratingProposal(false);
+        }
+    };
+
+    const handlePrintProposal = () => {
+        if (!printRef.current) return;
+        // Create a style element to enforce print styling
+        const style = document.createElement('style');
+        style.innerHTML = `
+            @media print {
+                body * { visibility: hidden; }
+                #print-area, #print-area * { visibility: visible; }
+                #print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 20px; }
+            }
+        `;
+        document.head.appendChild(style);
+        window.print();
+        document.head.removeChild(style);
     };
 
     // --- MANIPULATION HANDLERS ---
@@ -260,6 +307,13 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         }
     };
 
+    // --- HELPER: Calculate Actual Spent per Category ---
+    const getRealizedAmount = (categoryId: string) => {
+        return financialRecords
+            .filter(r => r.relatedBudgetCategoryId === categoryId)
+            .reduce((sum, r) => sum + r.amount, 0);
+    };
+
     // --- RENDER ---
 
     return (
@@ -310,9 +364,25 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                                 <span className="text-xs font-bold text-slate-400 uppercase block">Total Orçado</span>
                                 <span className="text-2xl font-bold text-pms-700">R$ {budget.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                             </div>
+                            <div className="border-l pl-4 border-slate-200">
+                                <span className="text-xs font-bold text-slate-400 uppercase block">Total Realizado</span>
+                                <span className="text-xl font-bold text-slate-600">
+                                    R$ {financialRecords.reduce((s,r) => s + r.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                            </div>
                         </div>
 
                         <div className="flex gap-2">
+                             <button 
+                                onClick={handleGenerateProposal}
+                                disabled={isGeneratingProposal}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all disabled:opacity-70"
+                                title="Gerar Proposta Profissional em PDF"
+                             >
+                                {isGeneratingProposal ? <Loader2 size={18} className="animate-spin"/> : <FileDown size={18} />}
+                                <span className="hidden sm:inline">Proposta PDF</span>
+                             </button>
+
                              <button 
                                 onClick={openAiModal}
                                 disabled={isGenerating}
@@ -356,108 +426,135 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                             </div>
                         )}
 
-                        {budget.categories.map((category) => (
-                            <div key={category.id} className="border-b border-slate-100 last:border-0">
-                                {/* Category Header */}
-                                <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex items-center justify-between group">
-                                    <div 
-                                        className="flex items-center gap-2 cursor-pointer flex-1"
-                                        onClick={() => toggleCategory(category.id)}
-                                    >
-                                        {expandedCategories[category.id] ? <ChevronDown size={18} className="text-slate-400"/> : <ChevronRight size={18} className="text-slate-400"/>}
-                                        <input 
-                                            type="text" 
-                                            className="font-bold text-slate-800 bg-transparent outline-none w-full cursor-pointer focus:bg-white focus:cursor-text focus:px-2 rounded"
-                                            value={category.name}
-                                            onChange={(e) => {
-                                                const newCats = budget.categories.map(c => c.id === category.id ? {...c, name: e.target.value} : c);
-                                                setBudget({...budget, categories: newCats});
-                                            }}
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <span className="font-bold text-slate-700 text-sm">
-                                            R$ {category.categoryTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                        </span>
-                                        <button 
-                                            onClick={() => removeCategory(category.id)}
-                                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                </div>
+                        {budget.categories.map((category) => {
+                            const realized = getRealizedAmount(category.id);
+                            const percent = category.categoryTotal > 0 ? (realized / category.categoryTotal) * 100 : 0;
+                            const isOverBudget = realized > category.categoryTotal;
 
-                                {/* Items List */}
-                                {expandedCategories[category.id] && (
-                                    <div className="bg-white">
-                                        {category.items.map((item) => (
-                                            <div key={item.id} className="grid grid-cols-12 gap-2 p-2 border-b border-slate-50 items-center hover:bg-blue-50/30 transition-colors group/item">
-                                                {/* Description */}
-                                                <div className="col-span-6 md:col-span-5 pl-8 relative">
-                                                    <input 
-                                                        className="w-full bg-transparent outline-none text-sm text-slate-700 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
-                                                        value={item.description}
-                                                        onChange={(e) => updateItem(category.id, item.id, 'description', e.target.value)}
-                                                    />
-                                                    <button 
-                                                        onClick={() => removeItem(category.id, item.id)}
-                                                        className="absolute left-1 top-1/2 -translate-y-1/2 text-slate-300 hover:text-red-400 opacity-0 group-hover/item:opacity-100"
-                                                    >
-                                                        <Trash2 size={12} />
-                                                    </button>
-                                                </div>
-                                                
-                                                {/* Unit */}
-                                                <div className="col-span-2 text-center">
-                                                    <input 
-                                                        className="w-full text-center bg-transparent outline-none text-sm text-slate-500 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
-                                                        value={item.unit}
-                                                        onChange={(e) => updateItem(category.id, item.id, 'unit', e.target.value)}
-                                                    />
-                                                </div>
+                            return (
+                                <div key={category.id} className="border-b border-slate-100 last:border-0">
+                                    {/* Category Header */}
+                                    <div className="bg-slate-50 hover:bg-slate-100 transition-colors p-3 flex flex-col md:flex-row md:items-center justify-between group gap-2">
+                                        
+                                        {/* Left Side: Expand + Name input */}
+                                        <div className="flex items-center gap-2 flex-1 w-full">
+                                            <div 
+                                                className="cursor-pointer p-1"
+                                                onClick={() => toggleCategory(category.id)}
+                                            >
+                                                {expandedCategories[category.id] ? <ChevronDown size={18} className="text-slate-400"/> : <ChevronRight size={18} className="text-slate-400"/>}
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                className="font-bold text-slate-800 bg-transparent outline-none w-full cursor-pointer focus:bg-white focus:cursor-text focus:px-2 rounded"
+                                                value={category.name}
+                                                onChange={(e) => {
+                                                    const newCats = budget.categories.map(c => c.id === category.id ? {...c, name: e.target.value} : c);
+                                                    setBudget({...budget, categories: newCats});
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                        </div>
 
-                                                {/* Quantity */}
-                                                <div className="col-span-2 text-center">
-                                                    <input 
-                                                        type="number"
-                                                        className="w-full text-center bg-transparent outline-none text-sm font-medium text-slate-700 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
-                                                        value={item.quantity}
-                                                        onChange={(e) => updateItem(category.id, item.id, 'quantity', e.target.value)}
-                                                    />
+                                        {/* Right Side: Totals & Progress Bar */}
+                                        <div className="flex items-center gap-4 w-full md:w-auto justify-end pl-8 md:pl-0">
+                                            
+                                            {/* Comparison Bar */}
+                                            <div className="flex flex-col items-end min-w-[150px]">
+                                                <div className="flex gap-3 text-xs mb-1">
+                                                    <span className="text-slate-500">Orçado: <span className="font-bold">R$ {category.categoryTotal.toLocaleString('pt-BR', {notation:'compact'})}</span></span>
+                                                    <span className={`${isOverBudget ? 'text-red-600 font-bold' : 'text-green-600 font-bold'}`}>
+                                                        Real: R$ {realized.toLocaleString('pt-BR', {notation:'compact'})}
+                                                    </span>
                                                 </div>
-
-                                                {/* Unit Price */}
-                                                <div className="col-span-2 md:col-span-1 text-right">
-                                                    <input 
-                                                        type="number"
-                                                        className="w-full text-right bg-transparent outline-none text-sm text-slate-700 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
-                                                        value={item.unitPrice}
-                                                        onChange={(e) => updateItem(category.id, item.id, 'unitPrice', e.target.value)}
+                                                <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden relative">
+                                                    <div 
+                                                        className={`h-full rounded-full ${isOverBudget ? 'bg-red-500' : 'bg-green-500'}`} 
+                                                        style={{width: `${Math.min(percent, 100)}%`}}
                                                     />
-                                                </div>
-
-                                                {/* Total Price */}
-                                                <div className="hidden md:block md:col-span-2 text-right pr-4 font-bold text-slate-800 text-sm">
-                                                    {item.totalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 </div>
                                             </div>
-                                        ))}
-                                        
-                                        {/* Add Item Button */}
-                                        <div className="p-2 pl-8">
+
+                                            {/* Delete Action */}
                                             <button 
-                                                onClick={() => addItem(category.id)}
-                                                className="text-xs font-bold text-pms-600 hover:text-pms-700 flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
+                                                onClick={() => removeCategory(category.id)}
+                                                className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                                             >
-                                                <Plus size={14} /> Adicionar Item
+                                                <Trash2 size={16} />
                                             </button>
                                         </div>
                                     </div>
-                                )}
-                            </div>
-                        ))}
+
+                                    {/* Items List */}
+                                    {expandedCategories[category.id] && (
+                                        <div className="bg-white">
+                                            {category.items.map((item) => (
+                                                <div key={item.id} className="grid grid-cols-12 gap-2 p-2 border-b border-slate-50 items-center hover:bg-blue-50/30 transition-colors group/item">
+                                                    {/* Description */}
+                                                    <div className="col-span-6 md:col-span-5 pl-8 relative">
+                                                        <input 
+                                                            className="w-full bg-transparent outline-none text-sm text-slate-700 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
+                                                            value={item.description}
+                                                            onChange={(e) => updateItem(category.id, item.id, 'description', e.target.value)}
+                                                        />
+                                                        <button 
+                                                            onClick={() => removeItem(category.id, item.id)}
+                                                            className="absolute left-1 top-1/2 -translate-y-1/2 text-slate-300 hover:text-red-400 opacity-0 group-hover/item:opacity-100"
+                                                        >
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    {/* Unit */}
+                                                    <div className="col-span-2 text-center">
+                                                        <input 
+                                                            className="w-full text-center bg-transparent outline-none text-sm text-slate-500 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
+                                                            value={item.unit}
+                                                            onChange={(e) => updateItem(category.id, item.id, 'unit', e.target.value)}
+                                                        />
+                                                    </div>
+
+                                                    {/* Quantity */}
+                                                    <div className="col-span-2 text-center">
+                                                        <input 
+                                                            type="number"
+                                                            className="w-full text-center bg-transparent outline-none text-sm font-medium text-slate-700 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
+                                                            value={item.quantity}
+                                                            onChange={(e) => updateItem(category.id, item.id, 'quantity', e.target.value)}
+                                                        />
+                                                    </div>
+
+                                                    {/* Unit Price */}
+                                                    <div className="col-span-2 md:col-span-1 text-right">
+                                                        <input 
+                                                            type="number"
+                                                            className="w-full text-right bg-transparent outline-none text-sm text-slate-700 focus:bg-white focus:ring-1 focus:ring-blue-200 rounded px-1"
+                                                            value={item.unitPrice}
+                                                            onChange={(e) => updateItem(category.id, item.id, 'unitPrice', e.target.value)}
+                                                        />
+                                                    </div>
+
+                                                    {/* Total Price */}
+                                                    <div className="hidden md:block md:col-span-2 text-right pr-4 font-bold text-slate-800 text-sm">
+                                                        {item.totalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            
+                                            {/* Add Item Button */}
+                                            <div className="p-2 pl-8">
+                                                <button 
+                                                    onClick={() => addItem(category.id)}
+                                                    className="text-xs font-bold text-pms-600 hover:text-pms-700 flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
+                                                >
+                                                    <Plus size={14} /> Adicionar Item
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             ) : null}
@@ -526,6 +623,118 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                                     </>
                                 )}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* PROPOSAL PDF PREVIEW MODAL */}
+            {isProposalModalOpen && selectedWork && budget && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
+                    <div className="bg-slate-800 rounded-xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl relative">
+                        {/* Modal Header */}
+                        <div className="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-900 rounded-t-xl">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <FileText className="text-blue-400" /> Pré-visualização da Proposta
+                            </h3>
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={handlePrintProposal}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center gap-2 transition-all"
+                                >
+                                    <Printer size={18} /> Imprimir / Salvar PDF
+                                </button>
+                                <button 
+                                    onClick={() => setIsProposalModalOpen(false)}
+                                    className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-700"
+                                >
+                                    <X size={24} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Document View - Mimics A4 Paper */}
+                        <div className="flex-1 overflow-y-auto bg-slate-800 p-8 flex justify-center">
+                            <div 
+                                id="print-area" 
+                                ref={printRef}
+                                className="bg-white w-[210mm] min-h-[297mm] p-[15mm] shadow-2xl text-slate-900 font-serif leading-relaxed relative"
+                            >
+                                {/* HEADER */}
+                                <div className="border-b-2 border-slate-800 pb-4 mb-6 flex justify-between items-start">
+                                    <div>
+                                        <h1 className="text-2xl font-bold text-slate-900 uppercase tracking-wider">Proposta Comercial</h1>
+                                        <p className="text-sm text-slate-500 mt-1">Ref: {selectedWork.name}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <h2 className="text-xl font-bold text-slate-800">PMS Construtora</h2>
+                                        <p className="text-xs text-slate-500">Engenharia e Gestão de Obras</p>
+                                        <p className="text-xs text-slate-500">{new Date().toLocaleDateString('pt-BR')}</p>
+                                    </div>
+                                </div>
+
+                                {/* AI GENERATED TEXT (Intro, Method, Terms) */}
+                                <div className="prose prose-sm max-w-none mb-8 text-justify whitespace-pre-wrap font-sans text-slate-700">
+                                    {proposalText}
+                                </div>
+
+                                {/* BUDGET TABLE (React Rendered) */}
+                                <div className="mb-8">
+                                    <h3 className="text-lg font-bold text-slate-900 mb-2 border-l-4 border-slate-800 pl-3 uppercase">Quadro Resumo de Investimento</h3>
+                                    <table className="w-full text-sm border-collapse border border-slate-300">
+                                        <thead className="bg-slate-100">
+                                            <tr>
+                                                <th className="border border-slate-300 p-2 text-left">Etapa / Serviço</th>
+                                                <th className="border border-slate-300 p-2 text-center w-24">Qtd</th>
+                                                <th className="border border-slate-300 p-2 text-center w-24">Unid</th>
+                                                <th className="border border-slate-300 p-2 text-right w-32">Unit. (R$)</th>
+                                                <th className="border border-slate-300 p-2 text-right w-32">Total (R$)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {budget.categories.map(cat => (
+                                                <React.Fragment key={cat.id}>
+                                                    <tr className="bg-slate-50 font-bold">
+                                                        <td className="border border-slate-300 p-2 text-slate-800" colSpan={4}>{cat.name}</td>
+                                                        <td className="border border-slate-300 p-2 text-right text-slate-800">
+                                                            {cat.categoryTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        </td>
+                                                    </tr>
+                                                    {cat.items.map(item => (
+                                                        <tr key={item.id}>
+                                                            <td className="border border-slate-300 p-2 pl-6 text-slate-600">{item.description}</td>
+                                                            <td className="border border-slate-300 p-2 text-center">{item.quantity}</td>
+                                                            <td className="border border-slate-300 p-2 text-center">{item.unit}</td>
+                                                            <td className="border border-slate-300 p-2 text-right">{item.unitPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                            <td className="border border-slate-300 p-2 text-right">{item.totalPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                        </tr>
+                                                    ))}
+                                                </React.Fragment>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr className="bg-slate-800 text-white font-bold">
+                                                <td className="border border-slate-800 p-3 text-right" colSpan={4}>TOTAL GERAL ESTIMADO</td>
+                                                <td className="border border-slate-800 p-3 text-right">
+                                                    R$ {budget.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+
+                                {/* SIGNATURES */}
+                                <div className="mt-16 pt-8 border-t border-slate-300 flex justify-between">
+                                    <div className="text-center w-1/3">
+                                        <div className="border-t border-slate-800 pt-2 font-bold text-slate-800">PMS Construtora</div>
+                                        <div className="text-xs text-slate-500">Responsável Técnico</div>
+                                    </div>
+                                    <div className="text-center w-1/3">
+                                        <div className="border-t border-slate-800 pt-2 font-bold text-slate-800">{selectedWork.client || 'Cliente'}</div>
+                                        <div className="text-xs text-slate-500">De Acordo</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

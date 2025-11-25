@@ -177,6 +177,9 @@ export interface FinancialRecord {
   dueDate: string;
   paidDate?: string;
   status: 'Pendente' | 'Pago' | 'Atrasado';
+  
+  // LINK TO BUDGET (NEW)
+  relatedBudgetCategoryId?: string;
 }
 
 // --- WORKFORCE TYPES ---
