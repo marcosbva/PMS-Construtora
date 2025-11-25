@@ -93,6 +93,8 @@ export interface User {
   tradeName?: string; // Nome Fantasia
   website?: string;
   paymentInfo?: string; // Dados Bancários / Chave Pix
+  sellerName?: string; // Nome do Vendedor/Representante
+  sellerPhone?: string; // Whatsapp do Vendedor
   
   // SECURITY
   mustChangePassword?: boolean; // Obrigar troca de senha no primeiro acesso
@@ -114,6 +116,8 @@ export interface WorkStage {
   order: number;
 }
 
+export type ProgressMethod = 'STAGES' | 'TASKS';
+
 export interface ConstructionWork {
   id: string;
   name: string;
@@ -123,6 +127,7 @@ export interface ConstructionWork {
   address: string;
   status: WorkStatus;
   progress: number;
+  progressMethod?: ProgressMethod; // Método de cálculo do progresso
   budget: number;
   startDate: string;
   endDate: string;

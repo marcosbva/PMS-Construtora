@@ -361,7 +361,7 @@ function App() {
               )}
           </div>
           
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 border border-slate-700/50 relative overflow-hidden group">
+          <div className="bg-gradient-to-br from-slate-800 to-slate-800 rounded-xl p-4 border border-slate-700/50 relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-pms-600 rounded-full -mr-10 -mt-10 opacity-20 blur-xl group-hover:opacity-30 transition-opacity"></div>
               <div className="flex items-center gap-3 relative z-10">
                   <img src={currentUser.avatar} alt="User" className="w-10 h-10 rounded-full border-2 border-slate-600" />
@@ -458,6 +458,7 @@ function App() {
                                 users={users}
                                 logs={logs.filter(l => l.workId === activeWork.id)}
                                 orders={orders.filter(o => o.workId === activeWork.id)}
+                                tasks={tasks.filter(t => t.workId === activeWork.id)}
                                 onUpdateWork={async (w) => {
                                     await api.updateWork(w);
                                     setWorks(prev => prev.map(wk => wk.id === w.id ? w : wk));
@@ -530,6 +531,7 @@ function App() {
                         {currentView === 'STAGES' && (
                             <ProjectStages
                                 work={activeWork}
+                                tasks={tasks.filter(t => t.workId === activeWork.id)}
                                 onUpdateWork={async (w) => {
                                     await api.updateWork(w);
                                     setWorks(prev => prev.map(wk => wk.id === w.id ? w : wk));

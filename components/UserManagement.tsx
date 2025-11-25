@@ -1,7 +1,8 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition, RolePermissionsMap, AppPermissions, DailyLog } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck, Phone, Building2, MapPin, Globe, CreditCard, History, ShoppingBag } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck, Phone, Building2, MapPin, Globe, CreditCard, History, ShoppingBag, Search, MessageCircle, Smartphone } from 'lucide-react';
 import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSecondaryAuthUser } from '../services/firebase';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
@@ -86,6 +87,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
   // Loading State
   const [isSaving, setIsSaving] = useState(false);
+  const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
 
   // Editing State
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -138,6 +140,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [userTradeName, setUserTradeName] = useState('');
   const [userWebsite, setUserWebsite] = useState('');
   const [userPaymentInfo, setUserPaymentInfo] = useState('');
+  const [userSellerName, setUserSellerName] = useState('');
+  const [userSellerPhone, setUserSellerPhone] = useState('');
 
   const [statusLabel, setStatusLabel] = useState('');
   const [statusColor, setStatusColor] = useState<'gray' | 'blue' | 'orange' | 'yellow' | 'red' | 'green' | 'purple'>('gray');
@@ -199,6 +203,43 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
   // --- HANDLERS ---
   
+  const handleCnpjLookup = async () => {
+      if (!userCnpj) {
+          alert("Digite o CNPJ para buscar.");
+          return;
+      }
+      
+      const cleanCnpj = userCnpj.replace(/\D/g, '');
+      if (cleanCnpj.length !== 14) {
+          alert("CNPJ inválido. Digite 14 números.");
+          return;
+      }
+
+      setIsSearchingCnpj(true);
+      try {
+          const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
+          if (!response.ok) throw new Error("CNPJ não encontrado ou erro na API.");
+          
+          const data = await response.json();
+          
+          setUserLegalName(data.razao_social || '');
+          setUserTradeName(data.nome_fantasia || data.razao_social || '');
+          setUserName(data.nome_fantasia || data.razao_social || '');
+          
+          const address = `${data.logradouro}, ${data.numero} ${data.complemento ? '- ' + data.complemento : ''} - ${data.bairro}, ${data.municipio} - ${data.uf}, CEP: ${data.cep}`;
+          setUserAddress(address);
+          
+          if (data.ddd_telefone_1) {
+              setUserPhone(`(${data.ddd_telefone_1.substring(0,2)}) ${data.ddd_telefone_1.substring(2)}`);
+          }
+
+      } catch (error: any) {
+          alert("Erro ao buscar CNPJ: " + error.message);
+      } finally {
+          setIsSearchingCnpj(false);
+      }
+  };
+
   const openUserModal = (user?: User) => {
     setSupplierModalTab('DATA');
     if (user) {
@@ -220,6 +261,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         setUserTradeName(user.tradeName || '');
         setUserWebsite(user.website || '');
         setUserPaymentInfo(user.paymentInfo || '');
+        setUserSellerName(user.sellerName || '');
+        setUserSellerPhone(user.sellerPhone || '');
     } else {
         setEditingUser(null);
         setUserName('');
@@ -237,6 +280,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         setUserTradeName('');
         setUserWebsite('');
         setUserPaymentInfo('');
+        setUserSellerName('');
+        setUserSellerPhone('');
         
         // Defaults based on Tab
         if (activeTab === 'CLIENTS') {
@@ -355,7 +400,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             legalName: userLegalName,
             tradeName: userTradeName,
             website: userWebsite,
-            paymentInfo: userPaymentInfo
+            paymentInfo: userPaymentInfo,
+            sellerName: userSellerName,
+            sellerPhone: userSellerPhone
         };
 
         if (editingUser) {
@@ -549,6 +596,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                             </div>
                         </div>
                         <div className="flex gap-1">
+                            {user.sellerPhone && (
+                                <a 
+                                    href={`https://wa.me/55${user.sellerPhone.replace(/\D/g, '')}`} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                    title="Whatsapp do Vendedor"
+                                >
+                                    <MessageCircle size={16} />
+                                </a>
+                            )}
                             <button onClick={() => openUserModal(user)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-50 rounded-lg transition-colors"><Edit2 size={16} /></button>
                             
                             {/* DELETE BUTTON - Now checks permission matrix OR Admin role */}
@@ -934,12 +992,28 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                                             <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Ex: Casa das Tintas" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-bold text-slate-500 mb-1">Razão Social</label>
-                                            <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userLegalName} onChange={(e) => setUserLegalName(e.target.value)} placeholder="Ex: Tintas LTDA" />
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">CNPJ</label>
+                                            <div className="relative flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" 
+                                                    value={userCnpj} 
+                                                    onChange={(e) => setUserCnpj(e.target.value)} 
+                                                    placeholder="00.000.000/0000-00" 
+                                                />
+                                                <button 
+                                                    onClick={handleCnpjLookup}
+                                                    disabled={isSearchingCnpj}
+                                                    className="bg-blue-600 hover:bg-blue-500 text-white px-3 rounded-lg flex items-center justify-center shadow-sm disabled:opacity-50 transition-colors"
+                                                    title="Preencher automaticamente"
+                                                >
+                                                    {isSearchingCnpj ? <Loader2 size={16} className="animate-spin"/> : <Search size={16}/>}
+                                                </button>
+                                            </div>
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-bold text-slate-500 mb-1">CNPJ</label>
-                                            <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userCnpj} onChange={(e) => setUserCnpj(e.target.value)} placeholder="00.000.000/0000-00" />
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Razão Social</label>
+                                            <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userLegalName} onChange={(e) => setUserLegalName(e.target.value)} placeholder="Ex: Tintas LTDA" />
                                         </div>
                                     </div>
                                 </div>
@@ -968,6 +1042,34 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                                             <div className="relative">
                                                 <Globe className="absolute left-2 top-2 text-slate-400" size={16}/>
                                                 <input type="url" className="w-full border rounded p-2 pl-8 focus:ring-2 focus:ring-pms-500 outline-none text-blue-600" value={userWebsite} onChange={(e) => setUserWebsite(e.target.value)} placeholder="https://..." />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Sales Representative */}
+                                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                                    <h4 className="font-bold text-green-800 mb-3 flex items-center gap-2 text-sm uppercase"><UserCheck size={16}/> Contato do Vendedor</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Nome do Vendedor</label>
+                                            <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-green-500 outline-none" value={userSellerName} onChange={(e) => setUserSellerName(e.target.value)} placeholder="Ex: João da Silva" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Whatsapp Direto</label>
+                                            <div className="flex gap-2">
+                                                <input type="tel" className="w-full border rounded p-2 focus:ring-2 focus:ring-green-500 outline-none" value={userSellerPhone} onChange={(e) => setUserSellerPhone(e.target.value)} placeholder="(00) 00000-0000" />
+                                                {userSellerPhone && (
+                                                    <a 
+                                                        href={`https://wa.me/55${userSellerPhone.replace(/\D/g, '')}`} 
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="bg-green-600 text-white p-2 rounded-lg flex items-center justify-center hover:bg-green-500 transition-colors"
+                                                        title="Ir para Whatsapp"
+                                                    >
+                                                        <MessageCircle size={18} />
+                                                    </a>
+                                                )}
                                             </div>
                                         </div>
                                     </div>

@@ -1,14 +1,15 @@
 
 import React, { useState, useMemo } from 'react';
-import { ConstructionWork, WorkStage, StageStatus } from '../types';
-import { Plus, Trash2, CheckCircle2, Circle, Clock, Calendar, ArrowRight } from 'lucide-react';
+import { ConstructionWork, WorkStage, StageStatus, ProgressMethod, Task, TaskStatus } from '../types';
+import { Plus, Trash2, CheckCircle2, Circle, Clock, Calendar, ArrowRight, Settings, ListChecks } from 'lucide-react';
 
 interface ProjectStagesProps {
   work: ConstructionWork;
+  tasks: Task[];
   onUpdateWork: (work: ConstructionWork) => void;
 }
 
-export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork }) => {
+export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, tasks, onUpdateWork }) => {
   const [newStageName, setNewStageName] = useState('');
 
   const stages = useMemo(() => {
@@ -22,22 +23,39 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
     return { count: completed, percent: Math.round((completed / total) * 100) };
   }, [stages]);
 
-  // Helper to calculate and update work progress
-  const updateWorkProgress = (currentStages: WorkStage[]) => {
-      const total = currentStages.length;
+  // Centralized Progress Calculation Function
+  const calculateAndSaveProgress = (
+      currentStages: WorkStage[], 
+      method: ProgressMethod = work.progressMethod || 'STAGES'
+  ) => {
       let newProgress = 0;
-      
-      if (total > 0) {
-          const completed = currentStages.filter(s => s.status === 'COMPLETED').length;
-          newProgress = Math.round((completed / total) * 100);
+
+      if (method === 'STAGES') {
+          const total = currentStages.length;
+          if (total > 0) {
+              const completed = currentStages.filter(s => s.status === 'COMPLETED').length;
+              newProgress = Math.round((completed / total) * 100);
+          }
+      } else if (method === 'TASKS') {
+          const total = tasks.length;
+          if (total > 0) {
+              const completed = tasks.filter(t => t.status === TaskStatus.DONE).length;
+              newProgress = Math.round((completed / total) * 100);
+          }
       }
 
-      // Update Work with new Stages AND new Progress
+      // Update Work with new Stages AND new Progress AND new Method
       onUpdateWork({ 
           ...work, 
           stages: currentStages,
-          progress: newProgress 
+          progress: newProgress,
+          progressMethod: method
       });
+  };
+
+  const handleMethodChange = (newMethod: ProgressMethod) => {
+      // Trigger calculation with current stages but new method
+      calculateAndSaveProgress(work.stages || [], newMethod);
   };
 
   const handleAddStage = () => {
@@ -51,14 +69,14 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
     };
 
     const updatedStages = [...(work.stages || []), newStage];
-    updateWorkProgress(updatedStages);
+    calculateAndSaveProgress(updatedStages);
     setNewStageName('');
   };
 
   const handleDeleteStage = (stageId: string) => {
     if(!window.confirm("Excluir esta etapa?")) return;
     const updatedStages = stages.filter(s => s.id !== stageId);
-    updateWorkProgress(updatedStages);
+    calculateAndSaveProgress(updatedStages);
   };
 
   const handleStatusChange = (stageId: string, currentStatus: StageStatus) => {
@@ -71,7 +89,7 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
       s.id === stageId ? { ...s, status: nextStatus } : s
     );
     
-    updateWorkProgress(updatedStages);
+    calculateAndSaveProgress(updatedStages);
   };
 
   return (
@@ -82,15 +100,52 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Calendar className="text-pms-600" /> Cronograma & Etapas
           </h2>
-          <p className="text-slate-500">Defina as fases macro da obra. O progresso geral será atualizado automaticamente.</p>
+          <p className="text-slate-500">Defina as fases macro da obra e o método de cálculo de progresso.</p>
         </div>
       </div>
 
-      {/* INPUT & PROGRESS HEADER */}
+      {/* SETTINGS & PROGRESS HEADER */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Add New */}
+        
+        {/* CALCULATION METHOD SELECTOR */}
+        <div className="lg:col-span-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-3">
+                <div className="bg-blue-50 p-2 rounded-full text-blue-600">
+                    <Settings size={20} />
+                </div>
+                <div>
+                    <h3 className="text-sm font-bold text-slate-800">Calcular Progresso Geral via:</h3>
+                    <p className="text-xs text-slate-500">Define como a barra de % na Visão Geral é atualizada.</p>
+                </div>
+            </div>
+            
+            <div className="flex bg-slate-100 p-1 rounded-lg">
+                <button 
+                    onClick={() => handleMethodChange('STAGES')}
+                    className={`px-4 py-2 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${
+                        (work.progressMethod || 'STAGES') === 'STAGES' 
+                        ? 'bg-white text-pms-600 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <ArrowRight size={14}/> Por Etapas do Cronograma
+                </button>
+                <button 
+                    onClick={() => handleMethodChange('TASKS')}
+                    className={`px-4 py-2 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${
+                        work.progressMethod === 'TASKS' 
+                        ? 'bg-white text-pms-600 shadow-sm' 
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                    <ListChecks size={14}/> Por Tarefas (Kanban)
+                </button>
+            </div>
+        </div>
+
+        {/* Add New Stage */}
         <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <label className="block text-sm font-bold text-slate-700 mb-2">Nova Etapa</label>
+            <label className="block text-sm font-bold text-slate-700 mb-2">Nova Etapa Macro</label>
             <div className="flex gap-2">
                 <input 
                     type="text" 

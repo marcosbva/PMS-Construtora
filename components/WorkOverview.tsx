@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog, MaterialOrder } from '../types';
-import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat, Upload, Eye, Lock } from 'lucide-react';
+import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog, MaterialOrder, Task } from '../types';
+import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat, Upload, Eye, Lock, ListChecks } from 'lucide-react';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
 import { WorkforceSummary } from './WorkforceSummary';
@@ -12,11 +12,12 @@ interface WorkOverviewProps {
   users: User[]; // To select client
   logs: DailyLog[]; // To calculate stats
   orders: MaterialOrder[]; // For material reporting
+  tasks: Task[]; // Added for progress awareness
   onUpdateWork: (work: ConstructionWork) => Promise<void>;
   onDeleteWork: (id: string) => Promise<void>;
 }
 
-export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, orders, onUpdateWork, onDeleteWork }) => {
+export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, orders, tasks, onUpdateWork, onDeleteWork }) => {
   const [formData, setFormData] = useState<ConstructionWork>(work);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
@@ -31,8 +32,9 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
     setIsDirty(false);
   }, [work]);
 
-  // Check if progress is managed by Stages
-  const isProgressManagedByStages = (formData.stages && formData.stages.length > 0);
+  // DETERMINE PROGRESS METHOD (DEFAULT TO STAGES)
+  const progressMethod = formData.progressMethod || 'STAGES';
+  const isAutoCalculated = true; // Always auto calculated based on the method now, unless we add a MANUAL option later.
 
   // Fetch Budget Data from the new Module
   useEffect(() => {
@@ -407,9 +409,12 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
                 <div className="mb-4">
                     <label className="block text-xs font-bold text-slate-500 mb-2 uppercase flex justify-between">
                         <span>Progresso Geral</span>
-                        {isProgressManagedByStages && (
-                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                <Lock size={10}/> Calculado via Cronograma
+                        {isAutoCalculated && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 ${
+                                progressMethod === 'TASKS' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                            }`}>
+                                {progressMethod === 'TASKS' ? <ListChecks size={10}/> : <Lock size={10}/>}
+                                {progressMethod === 'TASKS' ? 'Calculado via Tarefas' : 'Calculado via Etapas'}
                             </span>
                         )}
                     </label>
@@ -419,8 +424,8 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
                             min="0" max="100" 
                             value={formData.progress} 
                             onChange={(e) => handleChange('progress', parseInt(e.target.value))}
-                            disabled={isProgressManagedByStages}
-                            className={`w-full h-2 bg-slate-200 rounded-lg appearance-none accent-pms-600 ${isProgressManagedByStages ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                            disabled={isAutoCalculated}
+                            className={`w-full h-2 bg-slate-200 rounded-lg appearance-none accent-pms-600 ${isAutoCalculated ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                         />
                         <span className="font-bold text-slate-800 min-w-[3rem] text-right">{formData.progress}%</span>
                     </div>
