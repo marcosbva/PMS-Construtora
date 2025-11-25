@@ -209,3 +209,47 @@ export const generateBudgetProposalText = async (work: ConstructionWork, categor
     return "## Erro na geração do texto\n\nNão foi possível gerar o texto da proposta com IA. Por favor, edite este campo manualmente com as condições comerciais.";
   }
 }
+
+/**
+ * Generates a professional financial report executive summary
+ */
+export const generateFinancialReportText = async (
+    workName: string, 
+    clientName: string, 
+    totalInvested: number,
+    totalPending: number,
+    categorySummary: string
+) => {
+    try {
+        const prompt = `
+            Você é o Diretor Financeiro e de Customer Success da 'PMS Construtora'.
+            Escreva um **Relatório Financeiro Executivo** para o cliente, com tom extremamente profissional, transparente e tranquilizador.
+            
+            **Dados do Projeto:**
+            - Obra: ${workName}
+            - Cliente: ${clientName || 'Prezado Cliente'}
+            - Total Já Investido (Pago): R$ ${totalInvested.toLocaleString('pt-BR')}
+            - Previsão de Gastos Futuros (A Pagar): R$ ${totalPending.toLocaleString('pt-BR')}
+            
+            **Resumo por Categorias (Onde o dinheiro foi gasto):**
+            ${categorySummary}
+
+            **Sua Tarefa:**
+            Escreva um texto em Markdown (sem tabelas, apenas texto corrido e listas) que explique a situação financeira atual da obra.
+            
+            Estrutura Sugerida:
+            1. **Resumo Executivo**: Um parágrafo introdutório cordial agradecendo a confiança e informando que a gestão financeira está sendo feita com rigor.
+            2. **Análise de Investimentos**: Explique onde o dinheiro foi alocado (mencione as maiores categorias do resumo acima) de forma estratégica (ex: "Focamos recursos na fase estrutural...").
+            3. **Previsibilidade Financeira**: Comente sobre os valores pendentes/futuros de forma a preparar o cliente, mas sem assustar.
+            4. **Encerramento**: Coloque-se à disposição para dúvidas.
+
+            Use uma linguagem fácil de entender (sem "economês" complexo), mas que transmita autoridade, organização e transparência total.
+        `;
+
+        const response = await generateWithRetry('gemini-2.5-flash', prompt);
+        return response.text;
+    } catch (error) {
+        console.error("Gemini Financial Report Error:", error);
+        return "Não foi possível gerar o resumo executivo com IA neste momento. Apresentamos abaixo os dados analíticos.";
+    }
+}

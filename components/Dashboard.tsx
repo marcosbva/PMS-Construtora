@@ -1,5 +1,3 @@
-
-
 import React, { useEffect, useState } from 'react';
 import { 
   Briefcase, 
@@ -226,12 +224,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
           <p className="text-slate-500">Visão executiva em tempo real.</p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm w-full md:w-auto">
             <Filter size={18} className="text-slate-400 ml-1" />
             <select 
                 value={selectedWorkId} 
                 onChange={(e) => setSelectedWorkId(e.target.value)}
-                className="bg-transparent outline-none text-sm font-bold text-slate-700 min-w-[200px] cursor-pointer"
+                className="bg-transparent outline-none text-sm font-bold text-slate-700 w-full md:min-w-[200px] cursor-pointer"
             >
                 <option value="ALL">Todas as Obras</option>
                 {works.map(w => (
@@ -245,8 +243,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl p-6 shadow-lg text-white relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
           <div className="flex flex-col md:flex-row justify-between items-center relative z-10">
-              <div className="mb-4 md:mb-0">
-                  <h3 className="text-pms-300 text-sm font-bold uppercase tracking-wider mb-1 flex items-center gap-2">
+              <div className="mb-4 md:mb-0 text-center md:text-left">
+                  <h3 className="text-pms-300 text-sm font-bold uppercase tracking-wider mb-1 flex items-center justify-center md:justify-start gap-2">
                       <Building2 size={16} /> Patrimônio & Ativos
                   </h3>
                   <p className="text-3xl font-bold">R$ {kpis.totalAssets.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
@@ -449,7 +447,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
                   <p className="text-sm text-slate-500">Cronograma macro dos projetos.</p>
               </div>
               <div className="overflow-x-auto overflow-y-auto custom-scroll">
-                  <table className="w-full text-left text-sm">
+                  <table className="w-full text-left text-sm min-w-[600px]">
                       <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold border-b border-slate-100 sticky top-0">
                           <tr>
                               <th className="px-6 py-3">Obra</th>

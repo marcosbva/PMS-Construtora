@@ -21,6 +21,9 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
+  // UI State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   // Data State
   const [users, setUsers] = useState<User[]>([]);
   const [works, setWorks] = useState<ConstructionWork[]>([]);
@@ -106,6 +109,13 @@ function App() {
       setCurrentView('DASHBOARD');
   };
 
+  // --- NAVIGATION HANDLER (Auto-close mobile menu) ---
+  const navigateTo = (view: string, workId: string | null = null) => {
+      setCurrentView(view);
+      setActiveWorkId(workId);
+      setIsMobileMenuOpen(false); // Close drawer on mobile
+  };
+
   // --- CRUD HANDLERS ---
   const handleCreateWork = () => {
       setEditingWork({
@@ -174,8 +184,7 @@ function App() {
 
   // Helper to open a specific work view
   const handleOpenWork = (workId: string) => {
-      setActiveWorkId(workId);
-      setCurrentView('RESUMO'); // Default to Summary View
+      navigateTo('RESUMO', workId);
   };
 
   if (!currentUser) {
@@ -249,11 +258,27 @@ function App() {
   // --- ADMIN / INTERNAL MODE ---
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans text-slate-900">
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-2xl z-20 hidden md:flex">
-          <div className="p-6 border-b border-slate-800">
+      
+      {/* MOBILE MENU OVERLAY */}
+      {isMobileMenuOpen && (
+        <div 
+            className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+            onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* RESPONSIVE SIDEBAR */}
+      <aside 
+        className={`
+            fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col shadow-2xl 
+            transition-transform duration-300 ease-in-out 
+            md:relative md:translate-x-0
+            ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
+      >
+          <div className="p-6 border-b border-slate-800 flex justify-between items-center">
               <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden bg-black border border-slate-700">
+                  <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden bg-black border border-slate-700 shrink-0">
                       <img 
                         src="https://i.imgur.com/Qe2e0lQ.jpg" 
                         alt="PMS Construtora" 
@@ -265,31 +290,35 @@ function App() {
                       <p className="text-xs text-slate-400 font-medium">Construtora</p>
                   </div>
               </div>
+              {/* Close Button (Mobile Only) */}
+              <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-slate-400 hover:text-white">
+                  <X size={24} />
+              </button>
           </div>
           
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto hide-scrollbar">
-              <button onClick={() => { setCurrentView('DASHBOARD'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'DASHBOARD' && !activeWorkId ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('DASHBOARD')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'DASHBOARD' && !activeWorkId ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <LayoutGrid size={18} /> Dashboard
               </button>
-              <button onClick={() => { setCurrentView('WORKS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'WORKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('WORKS')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'WORKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Briefcase size={18} /> Obras
               </button>
-              <button onClick={() => { setCurrentView('BUDGET'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'BUDGET' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('BUDGET')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'BUDGET' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Calculator size={18} /> Orçamentos
               </button>
-              <button onClick={() => { setCurrentView('TASKS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'TASKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('TASKS')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'TASKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Menu size={18} /> Tarefas Gerais
               </button>
-              <button onClick={() => { setCurrentView('FINANCE'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'FINANCE' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('FINANCE')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'FINANCE' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <DollarSign size={18} /> Financeiro Global
               </button>
-              <button onClick={() => { setCurrentView('MATERIALS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'MATERIALS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('MATERIALS')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'MATERIALS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Package size={18} /> Materiais & Compras
               </button>
-              <button onClick={() => { setCurrentView('INVENTORY'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'INVENTORY' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('INVENTORY')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'INVENTORY' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Wrench size={18} /> Estoque & Equip.
               </button>
-              <button onClick={() => { setCurrentView('TEAM'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'TEAM' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <button onClick={() => navigateTo('TEAM')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'TEAM' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Users size={18} /> Equipe & Config
               </button>
           </nav>
@@ -309,16 +338,21 @@ function App() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-          <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-30">
-              <div className="flex items-center gap-2">
-                  <img src="https://i.imgur.com/Qe2e0lQ.jpg" alt="Logo" className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" />
-                  <span className="font-bold text-pms-400">PMS Construtora</span>
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
+          {/* MOBILE HEADER */}
+          <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-30 shrink-0">
+              <div className="flex items-center gap-3">
+                  <button onClick={() => setIsMobileMenuOpen(true)} className="text-white p-1 rounded hover:bg-slate-800">
+                      <Menu size={24} />
+                  </button>
+                  <div className="flex items-center gap-2">
+                      <span className="font-bold text-pms-400 text-lg">PMS Construtora</span>
+                  </div>
               </div>
-              <button onClick={handleLogout}><LogOut size={20}/></button>
+              <img src="https://i.imgur.com/Qe2e0lQ.jpg" alt="Logo" className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" />
           </header>
 
-          <div className="flex-1 overflow-auto p-4 md:p-8">
+          <div className="flex-1 overflow-auto p-4 md:p-8 w-full">
               {currentView === 'DASHBOARD' && !activeWorkId && (
                   <Dashboard 
                     works={works} 
@@ -326,15 +360,15 @@ function App() {
                     orders={orders}
                     rentals={rentals}
                     inventory={inventory}
-                    onNavigate={(view) => { setCurrentView(view); setActiveWorkId(null); }}
+                    onNavigate={(view) => navigateTo(view)}
                   />
               )}
 
               {currentView === 'WORKS' && !activeWorkId && (
                   <div>
-                      <div className="flex justify-between items-center mb-6">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                           <h2 className="text-2xl font-bold text-slate-800">Obras em Andamento</h2>
-                          <button onClick={handleCreateWork} className="bg-pms-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-pms-500 shadow">
+                          <button onClick={handleCreateWork} className="bg-pms-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-pms-500 shadow w-full md:w-auto justify-center">
                               <Plus size={20} /> Nova Obra
                           </button>
                       </div>
@@ -372,25 +406,25 @@ function App() {
 
               {activeWorkId && (
                   <div className="h-full flex flex-col">
-                      <div className="flex items-center gap-4 mb-6">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
                           <button 
                             onClick={() => { setActiveWorkId(null); setCurrentView('DASHBOARD'); }} 
-                            className="text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors"
+                            className="text-slate-400 hover:text-slate-600 font-bold text-sm transition-colors flex items-center gap-1"
                           >
                             ← Voltar
                           </button>
-                          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                          <h2 className="text-xl md:text-2xl font-bold text-slate-800 flex flex-wrap items-center gap-2">
                               {works.find(w => w.id === activeWorkId)?.name} 
-                              <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded">Painel de Obra</span>
+                              <span className="text-sm font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded whitespace-nowrap">Painel de Obra</span>
                           </h2>
                       </div>
                       
-                      <div className="flex border-b border-slate-200 mb-4 overflow-x-auto">
+                      <div className="flex border-b border-slate-200 mb-4 overflow-x-auto hide-scrollbar">
                           {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO', 'ALUGUEIS'].map(tab => (
                               <button 
                                 key={tab}
                                 onClick={() => setCurrentView(tab)}
-                                className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${currentView === tab ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                className={`px-4 md:px-6 py-3 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${currentView === tab ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                               >
                                   {tab === 'RESUMO' ? 'Visão Geral' : 
                                    tab === 'KANBAN' ? 'Tarefas & Kanban' : 

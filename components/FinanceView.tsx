@@ -1,10 +1,10 @@
 
-
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { FinancialRecord, FinanceType, User, UserRole, ConstructionWork, FinanceCategoryDefinition, WorkBudget } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from 'recharts';
-import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon, Filter, ArrowDown, Plus, BarChart3 } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon, Filter, ArrowDown, Plus, BarChart3, FileDown, Printer, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
+import { generateFinancialReportText } from '../services/geminiService';
 
 interface FinanceViewProps {
   records: FinancialRecord[];
@@ -27,6 +27,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 }) => {
   const isGlobal = !work;
   const detailsTableRef = useRef<HTMLDivElement>(null);
+  const printRef = useRef<HTMLDivElement>(null);
 
   // Filter State
   const [viewFilter, setViewFilter] = useState<'ALL' | 'EXPENSE' | 'INCOME' | 'PENDING'>('ALL');
@@ -34,6 +35,11 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  // Report State
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportText, setReportText] = useState('');
   
   // Budget Data State for Linking
   const [workBudget, setWorkBudget] = useState<WorkBudget | null>(null);
@@ -217,6 +223,65 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       }, 100);
   };
 
+  // --- REPORT GENERATION HANDLER ---
+  const handleGenerateReport = async () => {
+      if (!work) return;
+      setIsGeneratingReport(true);
+      
+      try {
+          // Prepare Summaries for AI
+          const paidExpenses = records.filter(r => r.type === FinanceType.EXPENSE && r.status === 'Pago');
+          const totalPaid = paidExpenses.reduce((acc, r) => acc + r.amount, 0);
+          
+          const pendingExpenses = records.filter(r => r.type === FinanceType.EXPENSE && r.status === 'Pendente');
+          const totalPending = pendingExpenses.reduce((acc, r) => acc + r.amount, 0);
+
+          // Group categories for summary string
+          const catSummary: Record<string, number> = {};
+          paidExpenses.forEach(r => {
+              catSummary[r.category] = (catSummary[r.category] || 0) + r.amount;
+          });
+          
+          // Convert to string for AI prompt
+          const catString = Object.entries(catSummary)
+              .sort((a,b) => b[1] - a[1]) // sort highest first
+              .map(([cat, val]) => `- ${cat}: R$ ${val.toLocaleString('pt-BR')}`)
+              .join('\n');
+
+          const text = await generateFinancialReportText(
+              work.name,
+              work.client,
+              totalPaid,
+              totalPending,
+              catString || "Ainda não houve despesas registradas."
+          );
+
+          setReportText(text);
+          setIsReportModalOpen(true);
+
+      } catch (error) {
+          console.error(error);
+          alert("Erro ao gerar relatório com IA.");
+      } finally {
+          setIsGeneratingReport(false);
+      }
+  };
+
+  const handlePrintReport = () => {
+      if (!printRef.current) return;
+      const style = document.createElement('style');
+      style.innerHTML = `
+          @media print {
+              body * { visibility: hidden; }
+              #print-area, #print-area * { visibility: visible; }
+              #print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 20px; }
+          }
+      `;
+      document.head.appendChild(style);
+      window.print();
+      document.head.removeChild(style);
+  };
+
   return (
     <div className="space-y-8 pb-10 relative">
       {/* Header */}
@@ -225,13 +290,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
           {isGlobal ? 'Financeiro Global' : `Financeiro: ${work.name}`}
         </h2>
         <div className="flex gap-2">
-            <button className="px-4 py-2 bg-pms-900 text-white rounded-lg text-sm hover:bg-pms-800">
-                Relatório PDF
+            <button 
+                onClick={handleGenerateReport}
+                disabled={isGeneratingReport}
+                className="px-4 py-2 bg-pms-900 text-white rounded-lg text-sm hover:bg-pms-800 flex items-center gap-2 disabled:opacity-70 transition-all shadow-md shadow-pms-900/20"
+            >
+                {isGeneratingReport ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                {isGeneratingReport ? 'Gerando Relatório...' : 'Relatório PDF'}
             </button>
             {!isGlobal && (
               <button 
                 onClick={() => handleOpenModal()}
-                className="px-4 py-2 bg-pms-600 text-white rounded-lg text-sm hover:bg-pms-500 flex items-center gap-2 transition-colors"
+                className="px-4 py-2 bg-pms-600 text-white rounded-lg text-sm hover:bg-pms-500 flex items-center gap-2 transition-colors shadow-md shadow-pms-600/20"
               >
                   <DollarSign size={16} /> Novo Lançamento
               </button>
@@ -610,6 +680,110 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               </table>
           </div>
       </div>
+
+      {/* REPORT MODAL (PRINT PREVIEW) */}
+      {isReportModalOpen && work && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
+              <div className="bg-slate-800 rounded-xl w-full max-w-4xl h-[90vh] flex flex-col shadow-2xl relative">
+                  <div className="flex justify-between items-center p-4 border-b border-slate-700 bg-slate-900 rounded-t-xl">
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                          <FileText className="text-pms-400" /> Relatório Financeiro Executivo
+                      </h3>
+                      <div className="flex gap-3">
+                          <button 
+                              onClick={handlePrintReport}
+                              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center gap-2 transition-all"
+                          >
+                              <Printer size={18} /> Imprimir / Salvar PDF
+                          </button>
+                          <button 
+                              onClick={() => setIsReportModalOpen(false)}
+                              className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-700"
+                          >
+                              <X size={24} />
+                          </button>
+                      </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto bg-slate-800 p-8 flex justify-center">
+                      <div 
+                          id="print-area" 
+                          ref={printRef}
+                          className="bg-white w-[210mm] min-h-[297mm] p-[15mm] shadow-2xl text-slate-900 font-serif leading-relaxed relative"
+                      >
+                          {/* REPORT HEADER */}
+                          <div className="border-b-2 border-slate-800 pb-4 mb-6 flex justify-between items-start">
+                              <div>
+                                  <h1 className="text-2xl font-bold text-slate-900 uppercase tracking-wider">Relatório Financeiro</h1>
+                                  <p className="text-sm text-slate-500 mt-1">Obra: {work.name}</p>
+                              </div>
+                              <div className="text-right">
+                                  <h2 className="text-xl font-bold text-slate-800">PMS Construtora</h2>
+                                  <p className="text-xs text-slate-500">Controle Financeiro</p>
+                                  <p className="text-xs text-slate-500">{new Date().toLocaleDateString('pt-BR')}</p>
+                              </div>
+                          </div>
+
+                          {/* AI GENERATED TEXT */}
+                          <div className="prose prose-sm max-w-none mb-8 text-justify whitespace-pre-wrap font-sans text-slate-700">
+                              {reportText}
+                          </div>
+
+                          {/* FINANCIAL TABLE */}
+                          <div className="mt-8">
+                              <h3 className="text-lg font-bold text-slate-900 mb-2 border-l-4 border-slate-800 pl-3 uppercase">Detalhamento Analítico</h3>
+                              <table className="w-full text-xs border-collapse border border-slate-300">
+                                  <thead className="bg-slate-100">
+                                      <tr>
+                                          <th className="border border-slate-300 p-2 text-left">Data</th>
+                                          <th className="border border-slate-300 p-2 text-left">Descrição / Beneficiário</th>
+                                          <th className="border border-slate-300 p-2 text-center">Categoria</th>
+                                          <th className="border border-slate-300 p-2 text-right">Valor (R$)</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {/* Only Show Expenses, Paid or Pending */}
+                                      {records
+                                          .filter(r => r.type === FinanceType.EXPENSE)
+                                          .sort((a,b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+                                          .map((record) => {
+                                              const entity = users.find(u => u.id === record.entityId)?.name || 'Geral';
+                                              return (
+                                                  <tr key={record.id}>
+                                                      <td className="border border-slate-300 p-2">{new Date(record.dueDate).toLocaleDateString('pt-BR')}</td>
+                                                      <td className="border border-slate-300 p-2">
+                                                          <span className="font-bold block">{record.description}</span>
+                                                          <span className="text-slate-500 italic">{entity}</span>
+                                                      </td>
+                                                      <td className="border border-slate-300 p-2 text-center">{record.category}</td>
+                                                      <td className="border border-slate-300 p-2 text-right">
+                                                          {record.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                          <span className={`block text-[9px] uppercase font-bold ${record.status === 'Pago' ? 'text-green-600' : 'text-orange-600'}`}>{record.status}</span>
+                                                      </td>
+                                                  </tr>
+                                              )
+                                      })}
+                                  </tbody>
+                                  <tfoot>
+                                      <tr className="bg-slate-800 text-white font-bold">
+                                          <td className="border border-slate-800 p-2 text-right" colSpan={3}>TOTAL DE DESPESAS (Pago + Pendente)</td>
+                                          <td className="border border-slate-800 p-2 text-right">
+                                              R$ {records.filter(r => r.type === FinanceType.EXPENSE).reduce((sum, r) => sum + r.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                          </td>
+                                      </tr>
+                                  </tfoot>
+                              </table>
+                          </div>
+
+                          {/* FOOTER */}
+                          <div className="mt-16 pt-4 border-t border-slate-300 text-center text-xs text-slate-400">
+                              <p>Relatório gerado automaticamente pelo sistema de gestão PMS Construtora.</p>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* New/Edit Launch Modal */}
       {isModalOpen && (
