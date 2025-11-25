@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ConstructionWork, WorkBudget, BudgetCategory, BudgetItem, Task, TaskStatus, TaskPriority, FinancialRecord, FinanceType } from '../types';
 import { api } from '../services/api';
 import { generateBudgetStructure, generateBudgetProposalText } from '../services/geminiService';
-import { Calculator, Plus, Save, BrainCircuit, ChevronDown, ChevronRight, Trash2, Download, RefreshCw, Loader2, DollarSign, FileSpreadsheet, LayoutList, X, FileText, AlertCircle, CheckCircle2, FileDown, Printer } from 'lucide-react';
+import { Calculator, Plus, Save, BrainCircuit, ChevronDown, ChevronRight, Trash2, Download, RefreshCw, Loader2, DollarSign, FileSpreadsheet, LayoutList, X, FileText, AlertCircle, CheckCircle2, FileDown, Printer, Upload, Image as ImageIcon } from 'lucide-react';
 
 interface BudgetPlannerProps {
     works: ConstructionWork[];
@@ -23,6 +23,7 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
     // AI Modal State
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [aiScopeText, setAiScopeText] = useState('');
+    const [aiImage, setAiImage] = useState<string | null>(null);
 
     // Proposal Modal State
     const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
@@ -98,7 +99,21 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         const initialText = `Obra: ${selectedWork.name}\n\nDescrição do Projeto:\n${selectedWork.description || 'Descreva aqui o escopo detalhado (ex: Construção de casa 200m², alto padrão, 2 pavimentos, piscina, acabamento em porcelanato...)'}`;
         
         setAiScopeText(initialText);
+        setAiImage(null);
         setIsAiModalOpen(true);
+    };
+
+    const handleAiImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                if (reader.result) {
+                    setAiImage(reader.result as string);
+                }
+            };
+            reader.readAsDataURL(file);
+        }
     };
 
     const executeAiGeneration = async () => {
@@ -106,8 +121,12 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         
         setIsGenerating(true);
         try {
-            // We pass the user-edited scope text as the description to the AI service
-            const aiCategories = await generateBudgetStructure(selectedWork.name, aiScopeText);
+            // We pass the user-edited scope text and optional image to the AI service
+            const aiCategories = await generateBudgetStructure(
+                selectedWork.name, 
+                aiScopeText,
+                aiImage || undefined
+            );
             
             // Recalculate Totals just in case
             const total = aiCategories.reduce((sum, cat) => {
@@ -156,7 +175,7 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
             alert("Orçamento gerado! As etapas foram adicionadas automaticamente ao Quadro Kanban com o escopo detalhado.");
 
         } catch (error) {
-            alert("Erro ao gerar orçamento com IA. Tente detalhar mais o escopo.");
+            alert("Erro ao gerar orçamento com IA. Tente detalhar mais o escopo ou usar uma imagem menor.");
         } finally {
             setIsGenerating(false);
         }
@@ -569,7 +588,7 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                                     <BrainCircuit className="text-purple-600" /> Gerar EAP com IA
                                 </h3>
                                 <p className="text-sm text-slate-500">
-                                    Descreva o escopo da obra para gerar as etapas e estimativas.
+                                    Descreva o escopo e opcionalmente envie uma imagem (planta/esboço).
                                 </p>
                             </div>
                             <button 
@@ -581,19 +600,48 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto mb-4">
+                        <div className="flex-1 overflow-y-auto mb-4 custom-scroll pr-2">
                             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4 text-xs text-blue-700">
-                                <strong>Dica:</strong> Quanto mais detalhada a descrição (metragem, padrão de acabamento, quantidade de cômodos, tipo de estrutura), mais preciso será o orçamento gerado.
+                                <strong>Dica:</strong> Quanto mais detalhada a descrição (metragem, padrão de acabamento, etc.), mais preciso será o orçamento. Se enviar uma planta, a IA tentará estimar quantitativos visuais.
                             </div>
                             
+                            {/* IMAGE UPLOAD SECTION */}
+                            <div className="mb-4">
+                                <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-1">
+                                    <ImageIcon size={16} /> Planta Baixa / Esboço (Opcional)
+                                </label>
+                                
+                                {aiImage ? (
+                                    <div className="relative w-full h-40 bg-slate-100 rounded-lg overflow-hidden border border-slate-200 group">
+                                        <img src={aiImage} alt="Reference" className="w-full h-full object-contain" />
+                                        <button 
+                                            onClick={() => setAiImage(null)}
+                                            className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full opacity-80 hover:opacity-100 shadow-sm"
+                                            title="Remover imagem"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                            <Upload className="w-8 h-8 text-slate-400 mb-2" />
+                                            <p className="text-xs text-slate-500 font-bold">Clique para enviar imagem</p>
+                                            <p className="text-[10px] text-slate-400">JPG, PNG (Max 5MB)</p>
+                                        </div>
+                                        <input type="file" className="hidden" accept="image/*" onChange={handleAiImageUpload} />
+                                    </label>
+                                )}
+                            </div>
+
                             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-1">
-                                <FileText size={16} /> Escopo do Projeto
+                                <FileText size={16} /> Descrição do Escopo
                             </label>
                             <textarea 
-                                className="w-full h-64 border border-slate-300 rounded-lg p-4 text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none leading-relaxed"
+                                className="w-full h-40 border border-slate-300 rounded-lg p-4 text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none leading-relaxed"
                                 value={aiScopeText}
                                 onChange={(e) => setAiScopeText(e.target.value)}
-                                placeholder="Ex: Construção residencial de 150m², fundação em radier, alvenaria estrutural, telhado colonial, acabamento médio padrão, pintura acrílica, instalações elétricas e hidráulicas completas..."
+                                placeholder="Ex: Construção residencial de 150m², fundação em radier, alvenaria estrutural, telhado colonial, acabamento médio padrão..."
                                 disabled={isGenerating}
                             />
                         </div>

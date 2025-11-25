@@ -6,13 +6,14 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Helper to handle retries for 429 errors (Rate Limits)
+ * Updated to accept string or complex content object
  */
-async function generateWithRetry(model: string, prompt: string, retries = 3) {
+async function generateWithRetry(model: string, contents: any, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
       return await ai.models.generateContent({
         model: model,
-        contents: prompt,
+        contents: contents,
       });
     } catch (error: any) {
       // Check for quota exceeded (429) or similar ephemeral errors
@@ -93,19 +94,21 @@ export const summarizeLogs = async (logs: string[]) => {
 }
 
 /**
- * Generates an intelligent construction budget structure (WBS/EAP) based on work details.
+ * Generates an intelligent construction budget structure (WBS/EAP) based on work details and optional image.
  */
-export const generateBudgetStructure = async (workName: string, workDescription: string): Promise<BudgetCategory[]> => {
+export const generateBudgetStructure = async (workName: string, workDescription: string, imageBase64?: string): Promise<BudgetCategory[]> => {
   try {
-    const prompt = `
+    const textPrompt = `
       Atue como um Engenheiro Civil Sênior Especialista em Orçamentos e BIM.
       Crie uma Estrutura Analítica de Projeto (EAP) / Orçamento Estimativo para a seguinte obra:
       
       Nome da Obra: ${workName}
-      Descrição: ${workDescription}
+      Descrição e Escopo: ${workDescription}
+
+      ${imageBase64 ? 'Uma imagem técnica (planta/esboço) foi fornecida. Use-a para estimar quantidades (áreas de piso, parede, número de pontos elétricos) com mais precisão.' : ''}
 
       Gere uma lista de etapas (Categorias) e serviços principais (Itens) que são essenciais para este tipo de obra.
-      Para cada item, estime uma unidade de medida padrão (m², un, m³, vb) e uma quantidade aproximada baseada na descrição (chute educado se não houver dados). O preço unitário pode ser 0.
+      Para cada item, estime uma unidade de medida padrão (m², un, m³, vb) e uma quantidade aproximada baseada na descrição (chute educado e realista se não houver dados exatos). O preço unitário pode ser 0.
 
       Responda EXCLUSIVAMENTE um JSON com o seguinte formato (Array de Categories):
       [
@@ -120,10 +123,34 @@ export const generateBudgetStructure = async (workName: string, workDescription:
         ...
       ]
       
-      Não inclua markdown. Apenas o JSON puro.
+      Não inclua markdown, não inclua explicações. Apenas o JSON puro.
     `;
 
-    const response = await generateWithRetry('gemini-2.5-flash', prompt);
+    let contents: any;
+
+    if (imageBase64) {
+      // Extract mime type and data from data URL
+      // Format: data:image/png;base64,iVBORw0KGgo...
+      const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+         const mimeType = matches[1];
+         const data = matches[2];
+         
+         contents = {
+           parts: [
+             { text: textPrompt },
+             { inlineData: { mimeType, data } }
+           ]
+         };
+      } else {
+         // Fallback if regex fails
+         contents = textPrompt;
+      }
+    } else {
+      contents = textPrompt;
+    }
+
+    const response = await generateWithRetry('gemini-2.5-flash', contents);
     const text = response.text || "[]";
     const jsonStr = text.replace(/```json|```/g, '').trim();
     
