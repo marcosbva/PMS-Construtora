@@ -82,7 +82,7 @@ export const api = {
       });
   },
   
-  updateCompanySettings: async (settings: { name?: string; logoUrl?: string; primaryColor?: string }) => {
+  updateCompanySettings: async (settings: { name?: string; logoUrl?: string; primaryColor?: string; phone?: string }) => {
       const db = getDb();
       if (!db) return;
       const docRef = doc(db, COLLECTIONS.SETTINGS, 'company_info');

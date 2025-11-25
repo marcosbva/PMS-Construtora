@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { DailyLog, User, Task, WORKFORCE_ROLES_LIST, ISSUE_CATEGORIES_LIST, IssueCategory, IssueSeverity, IssueImpact } from '../types';
 import { Camera, Calendar, User as UserIcon, Sun, Cloud, CloudRain, CloudSnow, Briefcase, CheckCircle2, X, AlertTriangle, FileText, Upload, Link as LinkIcon, Image as ImageIcon, Trash2, Plus, Minus, Users, HardHat, Siren, AlertOctagon, ShieldCheck, Flame, Clock, DollarSign, Leaf, HeartPulse, Zap, Edit2, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
+import { uploadFile } from '../services/storage';
 
 interface DailyLogProps {
   logs: DailyLog[];
@@ -14,45 +15,6 @@ interface DailyLogProps {
   onUpdateLog?: (log: DailyLog) => void;
   onDeleteLog?: (id: string) => void;
 }
-
-// --- UTILITY: Image Compression ---
-const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target?.result as string;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-                const MAX_SIZE = 1280; // Max dimension (HD)
-                
-                if (width > height && width > MAX_SIZE) {
-                    height *= MAX_SIZE / width;
-                    width = MAX_SIZE;
-                } else if (height > MAX_SIZE) {
-                    width *= MAX_SIZE / height;
-                    height = MAX_SIZE;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    ctx.drawImage(img, 0, 0, width, height);
-                    // Compress to JPEG with 70% quality
-                    resolve(canvas.toDataURL('image/jpeg', 0.7));
-                } else {
-                    reject(new Error("Canvas Context Failed"));
-                }
-            };
-            img.onerror = (err) => reject(err);
-        };
-        reader.onerror = (err) => reject(err);
-    });
-};
 
 export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, workId, currentUser, onAddLog, onUpdateLog, onDeleteLog }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -180,20 +142,30 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
       });
   };
 
-  // Handle Local File Selection with COMPRESSION
+  // Handle Local File Selection with STORAGE UPLOAD
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         setIsProcessingImages(true);
         try {
             const files: File[] = Array.from(e.target.files);
-            const compressedPromises = files.map(file => compressImage(file));
             
-            const compressedImages = await Promise.all(compressedPromises);
-            setFormImages(prev => [...prev, ...compressedImages]);
+            // Upload all files in parallel
+            const uploadPromises = files.map(file => {
+                // Standardized Path: obras/${obraId}/diarios/${date}/${timestamp_filename}
+                const path = `obras/${workId}/diarios/${date}`;
+                return uploadFile(file, path, { 
+                    type: 'daily_log_image',
+                    author: currentUser.id 
+                });
+            });
+            
+            const uploadedUrls = await Promise.all(uploadPromises);
+            
+            setFormImages(prev => [...prev, ...uploadedUrls]);
             setIsUploadModalOpen(false); // Auto close on success
-        } catch (error) {
-            console.error("Compression error:", error);
-            alert("Erro ao processar imagem. Tente novamente.");
+        } catch (error: any) {
+            console.error("Upload error:", error);
+            alert(`Erro ao enviar imagens: ${error.message}`);
         } finally {
             setIsProcessingImages(false);
         }
@@ -798,7 +770,7 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                         >
                             <Camera size={24} className="mb-1"/>
                             <span className="text-xs font-bold">Adicionar Fotos ou Arquivos</span>
-                            <span className="text-[10px] opacity-70">PC, Celular ou Google Drive</span>
+                            <span className="text-[10px] opacity-70">Upload Direto</span>
                         </button>
 
                         {/* Image Preview Grid */}
@@ -867,7 +839,7 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
                                   {isProcessingImages ? <Loader2 size={24} className="animate-spin" /> : <Upload size={24} />}
                               </div>
                               <span className="block font-bold text-slate-700 text-sm">
-                                  {isProcessingImages ? 'Otimizando Imagens...' : 'Do seu Dispositivo'}
+                                  {isProcessingImages ? 'Enviando para Nuvem...' : 'Do seu Dispositivo'}
                               </span>
                               <span className="block text-xs text-slate-400 mt-1">
                                   {isProcessingImages ? 'Aguarde um momento' : 'PC, Galeria ou Câmera'}

@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition, RolePermissionsMap, AppPermissions, DailyLog } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck, Phone, Building2, MapPin, Globe, CreditCard, History, ShoppingBag } from 'lucide-react';
 import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSecondaryAuthUser } from '../services/firebase';
 import { api } from '../services/api';
+import { uploadFile } from '../services/storage';
 
 // Missing Component Definition
 interface TabButtonProps {
@@ -76,6 +77,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [supplierModalTab, setSupplierModalTab] = useState<'DATA' | 'HISTORY'>('DATA');
   
   // Feedback Modal State (New User Credentials)
   const [createdUserCreds, setCreatedUserCreds] = useState<{email: string, pass: string} | null>(null);
@@ -97,6 +99,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
   // Company Settings State
   const [companyName, setCompanyName] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
   const [companyLogo, setCompanyLogo] = useState('');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
@@ -111,6 +114,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           api.getCompanySettings().then(settings => {
               if (settings) {
                   setCompanyName(settings.name || '');
+                  setCompanyPhone(settings.phone || '');
                   setCompanyLogo(settings.logoUrl || '');
               }
           });
@@ -128,6 +132,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [userPhone, setUserPhone] = useState('');
   const [userBirth, setUserBirth] = useState('');
   const [userAvatar, setUserAvatar] = useState('');
+  
+  // Supplier Specific Form States
+  const [userCnpj, setUserCnpj] = useState('');
+  const [userLegalName, setUserLegalName] = useState('');
+  const [userTradeName, setUserTradeName] = useState('');
+  const [userWebsite, setUserWebsite] = useState('');
+  const [userPaymentInfo, setUserPaymentInfo] = useState('');
 
   const [statusLabel, setStatusLabel] = useState('');
   const [statusColor, setStatusColor] = useState<'gray' | 'blue' | 'orange' | 'yellow' | 'red' | 'green' | 'purple'>('gray');
@@ -176,9 +187,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   
   const pendingCount = users.filter(u => u.status === 'PENDING').length;
 
+  // --- SUPPLIER HISTORY LOGIC ---
+  const supplierHistory = useMemo(() => {
+      if (!editingUser || editingUser.category !== UserCategory.SUPPLIER) return [];
+      return orders.filter(o => o.supplierId === editingUser.id && (o.status === OrderStatus.PURCHASED || o.status === OrderStatus.DELIVERED))
+                   .sort((a,b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
+  }, [editingUser, orders]);
+
+  const supplierTotalSales = useMemo(() => {
+      return supplierHistory.reduce((acc, order) => acc + (order.finalCost || 0), 0);
+  }, [supplierHistory]);
+
   // --- HANDLERS ---
   
   const openUserModal = (user?: User) => {
+    setSupplierModalTab('DATA');
     if (user) {
         setEditingUser(user);
         setUserName(user.name);
@@ -191,6 +214,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         setUserPhone(user.phone || '');
         setUserBirth(user.birthDate || '');
         setUserAvatar(user.avatar || '');
+        
+        // Supplier fields
+        setUserCnpj(user.cnpj || '');
+        setUserLegalName(user.legalName || '');
+        setUserTradeName(user.tradeName || '');
+        setUserWebsite(user.website || '');
+        setUserPaymentInfo(user.paymentInfo || '');
     } else {
         setEditingUser(null);
         setUserName('');
@@ -201,6 +231,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         setUserPhone('');
         setUserBirth('');
         setUserAvatar('');
+        
+        // Clear supplier fields
+        setUserCnpj('');
+        setUserLegalName('');
+        setUserTradeName('');
+        setUserWebsite('');
+        setUserPaymentInfo('');
         
         // Defaults based on Tab
         if (activeTab === 'CLIENTS') {
@@ -217,16 +254,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     setIsUserModalOpen(true);
   };
 
-  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
         const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            if (reader.result) {
-                setUserAvatar(reader.result as string);
-            }
-        };
-        reader.readAsDataURL(file);
+        let targetId = editingUser?.id || 'temp_new_user';
+        
+        try {
+            const url = await uploadFile(file, `usuarios/${targetId}`, { type: 'user_avatar' });
+            setUserAvatar(url);
+        } catch (error: any) {
+            alert("Erro ao enviar avatar: " + error.message);
+        }
     }
   };
 
@@ -235,7 +273,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           const file = e.target.files[0];
           setIsUploadingLogo(true);
           try {
-              const url = await api.uploadImage(file, `logos/company_logo_${currentUser.id}_${Date.now()}`);
+              const url = await uploadFile(file, `logos/${currentUser.id}`, { type: 'company_logo' });
               setCompanyLogo(url);
           } catch (error: any) {
               alert("Erro ao enviar logo: " + error.message);
@@ -250,6 +288,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       try {
           await api.updateCompanySettings({
               name: companyName,
+              phone: companyPhone,
               logoUrl: companyLogo
           });
           alert("Configurações salvas com sucesso!");
@@ -282,15 +321,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({
         let tempPassword = "";
 
         // --- CREATE AUTH USER LOGIC (NEW USER & ONLINE) ---
-        if (!editingUser && isCloudConnected && userEmail) {
+        // Only create auth for INTERNAL users or CLIENTS. Suppliers usually don't login in this version.
+        if (!editingUser && isCloudConnected && userEmail && (userCategory === UserCategory.INTERNAL || userCategory === UserCategory.CLIENT)) {
             tempPassword = generateTemporaryPassword();
             try {
-                // Create user in Firebase Auth using Secondary App (doesn't log out admin)
                 uid = await createSecondaryAuthUser(userEmail, tempPassword);
-                mustChangePassword = true; // Force change on first login
+                mustChangePassword = true; 
             } catch (authError: any) {
                 if (authError.code === 'auth/email-already-in-use') {
-                     // If email exists, we try to find if we have it in DB, or fail
                      alert("Este e-mail já está cadastrado no sistema de autenticação.");
                      setIsSaving(false);
                      return;
@@ -312,14 +350,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             phone: userPhone, 
             birthDate: userBirth,
             avatar: finalAvatar,
-            mustChangePassword: mustChangePassword
+            mustChangePassword: mustChangePassword,
+            // Supplier Fields
+            cnpj: userCnpj,
+            legalName: userLegalName,
+            tradeName: userTradeName,
+            website: userWebsite,
+            paymentInfo: userPaymentInfo
         };
 
         if (editingUser) {
             await onUpdateUser({ ...editingUser, ...userData });
         } else {
             await onAddUser(userData);
-            // If we created an Auth user, show credentials
             if (tempPassword) {
                 setCreatedUserCreds({ email: userEmail, pass: tempPassword });
             }
@@ -502,6 +545,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                                     {user.name}
                                     {currentUser.id === user.id && <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded">(Você)</span>}
                                 </h3>
+                                {user.tradeName && <p className="text-xs text-slate-600 font-medium">{user.tradeName}</p>}
                                 <p className="text-sm text-slate-500">{user.email}</p>
                             </div>
                         </div>
@@ -744,6 +788,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                                         onChange={(e) => setCompanyName(e.target.value)}
                                     />
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Telefone de Contato / Escritório</label>
+                                    <div className="relative">
+                                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                        <input 
+                                            type="tel" 
+                                            className="w-full pl-10 border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
+                                            placeholder="(00) 00000-0000"
+                                            value={companyPhone}
+                                            onChange={(e) => setCompanyPhone(e.target.value)}
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-1">Este número aparecerá no painel do cliente para contato.</p>
+                                </div>
                                 <div className="bg-blue-50 p-3 rounded border border-blue-100 text-xs text-blue-700 flex gap-2">
                                     <ShieldCheck size={16} className="shrink-0 mt-0.5"/>
                                     <span>Essas informações aparecerão no cabeçalho do sistema, nos relatórios PDF e na tela de login.</span>
@@ -784,81 +842,218 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       {/* USER MODAL */}
       {isUserModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-2">
+          <div className={`bg-white rounded-xl w-full ${userCategory === UserCategory.SUPPLIER ? 'max-w-3xl' : 'max-w-2xl'} p-6 shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[95vh] flex flex-col`}>
+            <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
               <h3 className="text-xl font-bold text-slate-800">{editingUser ? 'Editar Cadastro' : `Novo Usuário`}</h3>
               <button onClick={() => setIsUserModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
             </div>
-            <div className="space-y-4 overflow-y-auto flex-1 px-1">
-                  {/* AVATAR UPLOAD */}
-                  <div className="flex flex-col items-center justify-center mb-6">
-                      <div className="relative group">
-                          <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-slate-200 shadow-md">
-                              <img 
-                                src={userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName || 'User')}`} 
-                                alt="Preview" 
-                                className="w-full h-full object-cover" 
-                              />
-                          </div>
-                          <label className="absolute bottom-0 right-0 bg-pms-600 text-white p-1.5 rounded-full cursor-pointer hover:bg-pms-500 transition-colors shadow-sm">
-                              <Camera size={14} />
-                              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarFileSelect} />
-                          </label>
-                      </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2"><label className="block text-sm font-bold text-slate-700 mb-1">Nome Completo</label><input type="text" className="w-full border rounded p-2" value={userName} onChange={(e) => setUserName(e.target.value)} /></div>
-                      <div><label className="block text-sm font-bold text-slate-700 mb-1">Email</label><input type="email" className="w-full border rounded p-2" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} /></div>
-                      <div><label className="block text-sm font-bold text-slate-700 mb-1">CPF/CNPJ</label><input type="text" className="w-full border rounded p-2" value={userCpf} onChange={(e) => setUserCpf(e.target.value)} /></div>
-                  </div>
+            {/* SUPPLIER SPECIFIC TABS */}
+            {userCategory === UserCategory.SUPPLIER && editingUser && (
+                <div className="flex border-b border-slate-200 mb-4">
+                    <button 
+                        onClick={() => setSupplierModalTab('DATA')}
+                        className={`flex-1 py-2 text-sm font-bold border-b-2 transition-colors ${supplierModalTab === 'DATA' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                        Dados Cadastrais
+                    </button>
+                    <button 
+                        onClick={() => setSupplierModalTab('HISTORY')}
+                        className={`flex-1 py-2 text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 ${supplierModalTab === 'HISTORY' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <History size={16} /> Histórico de Compras
+                    </button>
+                </div>
+            )}
 
-                  {/* ROLE & CATEGORY SECTION */}
-                  <div className="bg-slate-50 p-4 rounded border mt-2">
-                      <h4 className="font-bold mb-2 flex items-center gap-2 text-slate-700"><Shield size={16}/> Definições de Acesso</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-xs font-bold mb-1 uppercase text-slate-500">Quem é? (Categoria)</label>
-                              <select 
-                                className="w-full border rounded p-2 bg-white font-medium" 
-                                value={userCategory} 
-                                onChange={(e) => setUserCategory(e.target.value as UserCategory)}
-                              >
-                                  <option value={UserCategory.INTERNAL}>Equipe Interna</option>
-                                  <option value={UserCategory.CLIENT}>Cliente (Dono de Obra)</option>
-                                  <option value={UserCategory.SUPPLIER}>Fornecedor</option>
-                              </select>
-                          </div>
-                          
-                          {/* Role Selection - Disabled for Clients to enforce VIEWER */}
-                          <div>
-                              <label className="block text-xs font-bold mb-1 uppercase text-slate-500">O que pode fazer? (Role)</label>
-                              <select 
-                                className="w-full border rounded p-2 bg-white font-medium disabled:bg-slate-100 disabled:text-slate-400" 
-                                value={userCategory === UserCategory.CLIENT ? UserRole.VIEWER : userRole} 
-                                onChange={(e) => setUserRole(e.target.value as UserRole)}
-                                disabled={userCategory === UserCategory.CLIENT}
-                              >
-                                  <option value={UserRole.VIEWER}>Visitante (Visualizar)</option>
-                                  <option value={UserRole.EDITOR}>Editor (Gerente/Mestre)</option>
-                                  <option value={UserRole.ADMIN}>Administrador (Total)</option>
-                              </select>
-                              {userCategory === UserCategory.CLIENT && <p className="text-[10px] text-slate-400 mt-1">Clientes sempre possuem acesso de leitura.</p>}
-                          </div>
+            <div className="overflow-y-auto flex-1 px-2 custom-scroll">
+                
+                {/* --- HISTORY TAB (SUPPLIER ONLY) --- */}
+                {userCategory === UserCategory.SUPPLIER && supplierModalTab === 'HISTORY' ? (
+                    <div className="space-y-4">
+                        {/* Summary */}
+                        <div className="bg-green-50 border border-green-100 rounded-lg p-4 flex items-center justify-between">
+                            <div>
+                                <p className="text-xs font-bold text-green-600 uppercase">Total Comprado (Pago/Entregue)</p>
+                                <p className="text-2xl font-bold text-green-800">R$ {supplierTotalSales.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                            </div>
+                            <div className="p-3 bg-white rounded-full text-green-600 shadow-sm">
+                                <ShoppingBag size={24} />
+                            </div>
+                        </div>
 
-                          <div className="col-span-2">
-                              <label className="block text-xs font-bold mb-1 uppercase text-slate-500">Status da Conta</label>
-                              <select className={`w-full border rounded p-2 font-bold ${userStatus === 'ACTIVE' ? 'text-green-600' : 'text-orange-600'}`} value={userStatus} onChange={(e) => setUserStatus(e.target.value as any)}><option value="ACTIVE">ATIVO (Permitir Acesso)</option><option value="PENDING">PENDENTE (Aguardando)</option><option value="BLOCKED">BLOQUEADO</option></select>
-                          </div>
-                      </div>
-                  </div>
+                        {/* History List */}
+                        <div className="space-y-2">
+                            {supplierHistory.length > 0 ? supplierHistory.map((order) => (
+                                <div key={order.id} className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex justify-between items-center">
+                                    <div>
+                                        <p className="font-bold text-slate-800 text-sm">{order.quantity} {order.unit} - {order.itemName}</p>
+                                        <p className="text-xs text-slate-500">{new Date(order.requestDate).toLocaleDateString('pt-BR')}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-bold text-slate-700 text-sm">R$ {order.finalCost?.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                                        <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold uppercase">{order.status === OrderStatus.DELIVERED ? 'Entregue' : 'Comprado'}</span>
+                                    </div>
+                                </div>
+                            )) : (
+                                <div className="text-center py-8 text-slate-400 italic">
+                                    Nenhuma compra registrada com este fornecedor.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    // --- DATA FORM (ALL USERS) ---
+                    <div className="space-y-6">
+                        {/* AVATAR UPLOAD */}
+                        <div className="flex flex-col items-center justify-center">
+                            <div className="relative group">
+                                <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-slate-200 shadow-md bg-slate-50">
+                                    <img 
+                                        src={userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName || 'User')}`} 
+                                        alt="Preview" 
+                                        className="w-full h-full object-cover" 
+                                    />
+                                </div>
+                                <label className="absolute bottom-0 right-0 bg-pms-600 text-white p-1.5 rounded-full cursor-pointer hover:bg-pms-500 transition-colors shadow-sm">
+                                    <Camera size={14} />
+                                    <input type="file" accept="image/*" className="hidden" onChange={handleAvatarFileSelect} />
+                                </label>
+                            </div>
+                        </div>
+
+                        {/* CONDITIONAL FORM RENDERING */}
+                        {userCategory === UserCategory.SUPPLIER ? (
+                            // --- ADVANCED SUPPLIER FORM ---
+                            <div className="space-y-6">
+                                {/* Identification Section */}
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                    <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm uppercase"><Building2 size={16}/> Identificação da Empresa</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="md:col-span-2">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Nome Fantasia (Principal)</label>
+                                            <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Ex: Casa das Tintas" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Razão Social</label>
+                                            <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userLegalName} onChange={(e) => setUserLegalName(e.target.value)} placeholder="Ex: Tintas LTDA" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">CNPJ</label>
+                                            <input type="text" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userCnpj} onChange={(e) => setUserCnpj(e.target.value)} placeholder="00.000.000/0000-00" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Contact Section */}
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                    <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm uppercase"><Phone size={16}/> Contato e Endereço</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Email Comercial</label>
+                                            <input type="email" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Telefone / WhatsApp</label>
+                                            <input type="tel" className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none" value={userPhone} onChange={(e) => setUserPhone(e.target.value)} />
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Endereço Completo</label>
+                                            <div className="relative">
+                                                <MapPin className="absolute left-2 top-2 text-slate-400" size={16}/>
+                                                <input type="text" className="w-full border rounded p-2 pl-8 focus:ring-2 focus:ring-pms-500 outline-none" value={userAddress} onChange={(e) => setUserAddress(e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="block text-xs font-bold text-slate-500 mb-1">Site / Catálogo</label>
+                                            <div className="relative">
+                                                <Globe className="absolute left-2 top-2 text-slate-400" size={16}/>
+                                                <input type="url" className="w-full border rounded p-2 pl-8 focus:ring-2 focus:ring-pms-500 outline-none text-blue-600" value={userWebsite} onChange={(e) => setUserWebsite(e.target.value)} placeholder="https://..." />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Finance Section */}
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                    <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2 text-sm uppercase"><CreditCard size={16}/> Dados Financeiros</h4>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 mb-1">Chave Pix / Dados Bancários</label>
+                                        <textarea className="w-full border rounded p-2 focus:ring-2 focus:ring-pms-500 outline-none h-20 resize-none text-sm" value={userPaymentInfo} onChange={(e) => setUserPaymentInfo(e.target.value)} placeholder="Banco, Agência, Conta ou Chave Pix..." />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            // --- STANDARD FORM (INTERNAL / CLIENT) ---
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="md:col-span-2"><label className="block text-sm font-bold text-slate-700 mb-1">Nome Completo</label><input type="text" className="w-full border rounded p-2" value={userName} onChange={(e) => setUserName(e.target.value)} /></div>
+                                <div><label className="block text-sm font-bold text-slate-700 mb-1">Email</label><input type="email" className="w-full border rounded p-2" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} /></div>
+                                <div><label className="block text-sm font-bold text-slate-700 mb-1">CPF/CNPJ</label><input type="text" className="w-full border rounded p-2" value={userCpf} onChange={(e) => setUserCpf(e.target.value)} /></div>
+                                {userCategory === UserCategory.CLIENT && (
+                                    <div className="md:col-span-2"><label className="block text-sm font-bold text-slate-700 mb-1">Endereço</label><input type="text" className="w-full border rounded p-2" value={userAddress} onChange={(e) => setUserAddress(e.target.value)} /></div>
+                                )}
+                                <div className="md:col-span-2"><label className="block text-sm font-bold text-slate-700 mb-1">Telefone</label><input type="text" className="w-full border rounded p-2" value={userPhone} onChange={(e) => setUserPhone(e.target.value)} /></div>
+                            </div>
+                        )}
+
+                        {/* SHARED ROLE & CATEGORY SECTION */}
+                        <div className="bg-slate-50 p-4 rounded border mt-2">
+                            <h4 className="font-bold mb-2 flex items-center gap-2 text-slate-700 text-sm uppercase"><Shield size={16}/> Definições de Acesso</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold mb-1 uppercase text-slate-500">Quem é? (Categoria)</label>
+                                    <select 
+                                        className="w-full border rounded p-2 bg-white font-medium text-sm" 
+                                        value={userCategory} 
+                                        onChange={(e) => setUserCategory(e.target.value as UserCategory)}
+                                        disabled={!!editingUser} // Lock category on edit to prevent mess
+                                    >
+                                        <option value={UserCategory.INTERNAL}>Equipe Interna</option>
+                                        <option value={UserCategory.CLIENT}>Cliente (Dono de Obra)</option>
+                                        <option value={UserCategory.SUPPLIER}>Fornecedor</option>
+                                    </select>
+                                </div>
+                                
+                                {/* Role Selection - Disabled for Clients to enforce VIEWER */}
+                                <div>
+                                    <label className="block text-xs font-bold mb-1 uppercase text-slate-500">O que pode fazer? (Role)</label>
+                                    <select 
+                                        className="w-full border rounded p-2 bg-white font-medium disabled:bg-slate-100 disabled:text-slate-400 text-sm" 
+                                        value={userCategory === UserCategory.CLIENT ? UserRole.VIEWER : userRole} 
+                                        onChange={(e) => setUserRole(e.target.value as UserRole)}
+                                        disabled={userCategory === UserCategory.CLIENT}
+                                    >
+                                        <option value={UserRole.VIEWER}>Visitante (Visualizar)</option>
+                                        <option value={UserRole.EDITOR}>Editor (Gerente/Mestre)</option>
+                                        <option value={UserRole.ADMIN}>Administrador (Total)</option>
+                                    </select>
+                                    {userCategory === UserCategory.CLIENT && <p className="text-[10px] text-slate-400 mt-1">Clientes sempre possuem acesso de leitura.</p>}
+                                </div>
+
+                                <div className="col-span-2">
+                                    <label className="block text-xs font-bold mb-1 uppercase text-slate-500">Status da Conta</label>
+                                    <select className={`w-full border rounded p-2 font-bold text-sm ${userStatus === 'ACTIVE' ? 'text-green-600' : 'text-orange-600'}`} value={userStatus} onChange={(e) => setUserStatus(e.target.value as any)}><option value="ACTIVE">ATIVO (Permitir Acesso)</option><option value="PENDING">PENDENTE (Aguardando)</option><option value="BLOCKED">BLOQUEADO</option></select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
-            <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
-                <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-600 bg-slate-100 rounded-lg">Cancelar</button>
-                <button onClick={saveUser} disabled={isSaving} className="px-6 py-2 bg-pms-600 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg disabled:opacity-70">
-                    {isSaving && <Loader2 size={18} className="animate-spin"/>} {isSaving ? 'Salvando...' : 'Salvar Cadastro'}
-                </button>
-            </div>
+
+            {/* FOOTER ACTIONS (Only if not in History View) */}
+            {supplierModalTab === 'DATA' && (
+                <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
+                    <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-600 bg-slate-100 rounded-lg font-bold text-sm">Cancelar</button>
+                    <button onClick={saveUser} disabled={isSaving} className="px-6 py-2 bg-pms-600 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg disabled:opacity-70 text-sm">
+                        {isSaving && <Loader2 size={18} className="animate-spin"/>} {isSaving ? 'Salvando...' : 'Salvar Cadastro'}
+                    </button>
+                </div>
+            )}
+            {supplierModalTab === 'HISTORY' && (
+                <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
+                    <button onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-bold text-sm">Fechar</button>
+                </div>
+            )}
           </div>
         </div>
       )}

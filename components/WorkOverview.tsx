@@ -1,9 +1,9 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog } from '../types';
 import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat, Upload, Eye } from 'lucide-react';
 import { api } from '../services/api';
+import { uploadFile } from '../services/storage';
 import { WorkforceSummary } from './WorkforceSummary';
 
 interface WorkOverviewProps {
@@ -21,6 +21,7 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
   const [budgetData, setBudgetData] = useState<WorkBudget | null>(null);
   const [isLoadingBudget, setIsLoadingBudget] = useState(true);
   const [isUploadingContract, setIsUploadingContract] = useState(false);
+  const [isUploadingCover, setIsUploadingCover] = useState(false);
 
   // Sync state if prop changes (e.g. background update)
   useEffect(() => {
@@ -39,8 +40,6 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
             // If budget exists, sync the ConstructionWork budget field to match the calculated total
             if (b && b.totalValue !== work.budget) {
                 setFormData(prev => ({ ...prev, budget: b.totalValue }));
-                // We don't set isDirty here to avoid annoying 'unsaved changes' warnings immediately on load,
-                // but the next save will persist this sync.
             }
         } catch (err) {
             console.error(err);
@@ -56,16 +55,19 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
     setIsDirty(true);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (reader.result) {
-          handleChange('imageUrl', reader.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
+      setIsUploadingCover(true);
+      try {
+          // Standardized Path: obras/${obraId}/capa
+          const url = await uploadFile(file, `obras/${work.id}/capa`, { type: 'cover_image' });
+          handleChange('imageUrl', url);
+      } catch (err) {
+          alert("Erro ao atualizar capa.");
+      } finally {
+          setIsUploadingCover(false);
+      }
     }
   };
 
@@ -75,10 +77,8 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
 
       setIsUploadingContract(true);
       try {
-          // Path: contracts/{workId}/filename
-          // Use timestamp to avoid collisions and cache issues
-          const path = `contracts/${work.id}/${Date.now()}_${file.name}`;
-          const url = await api.uploadImage(file, path);
+          // Standardized Path: obras/${obraId}/contratos
+          const url = await uploadFile(file, `obras/${work.id}/contratos`, { type: 'contract_pdf' });
           
           handleChange('contractUrl', url);
           alert("Contrato enviado com sucesso! Lembre-se de salvar as alterações.");
@@ -123,6 +123,13 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
         {/* Gradient Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90"></div>
 
+        {/* Loading Overlay */}
+        {isUploadingCover && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20 backdrop-blur-sm">
+                <Loader2 size={40} className="text-white animate-spin" />
+            </div>
+        )}
+
         {/* Title Overlay */}
         <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full">
            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 shadow-sm">{formData.name}</h1>
@@ -141,9 +148,9 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
         </div>
 
         {/* Change Cover Button */}
-        <label className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 backdrop-blur-md text-white p-2 rounded-full cursor-pointer transition-all shadow-lg border border-white/30 group-hover:scale-110">
+        <label className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 backdrop-blur-md text-white p-2 rounded-full cursor-pointer transition-all shadow-lg border border-white/30 group-hover:scale-110 z-10">
           <Camera size={20} />
-          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploadingCover} />
         </label>
       </div>
 

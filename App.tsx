@@ -37,7 +37,7 @@ function App() {
   const [rentals, setRentals] = useState<RentalItem[]>([]); // New State for Rentals
   const [financeCategories, setFinanceCategories] = useState<FinanceCategoryDefinition[]>(DEFAULT_FINANCE_CATEGORIES);
   const [permissions, setPermissions] = useState<RolePermissionsMap>(DEFAULT_ROLE_PERMISSIONS);
-  const [companySettings, setCompanySettings] = useState<{name?: string, logoUrl?: string} | null>(null);
+  const [companySettings, setCompanySettings] = useState<{name?: string, logoUrl?: string, phone?: string} | null>(null);
 
   // Navigation State
   const [currentView, setCurrentView] = useState('DASHBOARD');
@@ -255,6 +255,7 @@ function App() {
                           logs={logs}
                           orders={orders}
                           materials={materials}
+                          companySettings={companySettings}
                       />
                   </div>
               </main>

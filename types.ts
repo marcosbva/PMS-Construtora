@@ -72,7 +72,7 @@ export const ROLE_PERMISSIONS = DEFAULT_ROLE_PERMISSIONS;
 
 export interface User {
   id: string;
-  name: string;
+  name: string; // Nome de Exibição ou Contato Principal
   email: string;
   avatar: string;
   
@@ -86,6 +86,13 @@ export interface User {
   phone?: string;
   birthDate?: string;
   notes?: string;
+  
+  // SUPPLIER SPECIFIC FIELDS
+  cnpj?: string;
+  legalName?: string; // Razão Social
+  tradeName?: string; // Nome Fantasia
+  website?: string;
+  paymentInfo?: string; // Dados Bancários / Chave Pix
   
   // SECURITY
   mustChangePassword?: boolean; // Obrigar troca de senha no primeiro acesso

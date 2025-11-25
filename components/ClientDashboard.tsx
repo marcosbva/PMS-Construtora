@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, User, MaterialOrder, OrderStatus, Material } from '../types';
-import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, ChevronRight, Package, Truck, ShoppingCart } from 'lucide-react';
+import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, ChevronRight, Package, Truck, ShoppingCart, Building } from 'lucide-react';
 
 interface ClientDashboardProps {
   currentUser: User;
@@ -11,9 +11,10 @@ interface ClientDashboardProps {
   logs: DailyLog[];
   orders: MaterialOrder[];
   materials: Material[];
+  companySettings?: { name?: string, logoUrl?: string, phone?: string } | null;
 }
 
-export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, users, works, finance, logs, orders, materials }) => {
+export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, users, works, finance, logs, orders, materials, companySettings }) => {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'FINANCE' | 'GALLERY' | 'MATERIALS'>('OVERVIEW');
 
   // SECURITY: Strictly filter work by Client ID
@@ -98,6 +99,10 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
   // Construct WhatsApp Link
   const waNumber = responsibleEngineer?.phone ? responsibleEngineer.phone.replace(/\D/g, '') : '';
   const waLink = waNumber ? `https://wa.me/55${waNumber}` : '#';
+  
+  // Company Office Phone Link
+  const officePhone = companySettings?.phone ? companySettings.phone.replace(/\D/g, '') : '';
+  const officeLink = officePhone ? `tel:${officePhone}` : '#';
 
   return (
     <div className="pb-20 animate-fade-in">
@@ -196,28 +201,36 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
                       <div className="w-16 h-16 bg-pms-100 text-pms-600 rounded-full flex items-center justify-center mb-4">
                           <Phone size={32} />
                       </div>
-                      <h3 className="font-bold text-slate-800 mb-2">Fale com o Engenheiro</h3>
-                      <p className="text-sm text-slate-500 mb-1">Dúvidas sobre o andamento? Entre em contato direto.</p>
-                      {responsibleEngineer ? (
-                          <p className="text-sm font-bold text-slate-700 mb-4">{responsibleEngineer.name}</p>
-                      ) : (
-                          <p className="text-xs text-slate-400 mb-4 italic">Nenhum responsável atribuído.</p>
-                      )}
+                      <h3 className="font-bold text-slate-800 mb-2">Canais de Atendimento</h3>
+                      <p className="text-sm text-slate-500 mb-4">Fale com o engenheiro ou com nosso escritório.</p>
                       
-                      {waNumber ? (
-                          <a 
-                            href={waLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 flex items-center gap-2 transition-all transform hover:scale-105"
-                          >
-                              WhatsApp da Obra <ChevronRight size={16} />
-                          </a>
-                      ) : (
-                          <button disabled className="bg-slate-100 text-slate-400 px-6 py-3 rounded-xl font-bold cursor-not-allowed">
-                              Contato Indisponível
-                          </button>
-                      )}
+                      <div className="w-full space-y-3">
+                          {responsibleEngineer && waNumber ? (
+                              <a 
+                                href={waLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="w-full bg-green-600 hover:bg-green-500 text-white px-4 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
+                              >
+                                  <Phone size={18} /> WhatsApp do Engenheiro
+                              </a>
+                          ) : null}
+
+                          {officePhone ? (
+                              <a 
+                                href={officeLink}
+                                className="w-full bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
+                              >
+                                  <Building size={18} /> Ligar para Escritório
+                              </a>
+                          ) : null}
+
+                          {!waNumber && !officePhone && (
+                              <button disabled className="w-full bg-slate-100 text-slate-400 px-4 py-3 rounded-xl font-bold cursor-not-allowed">
+                                  Contatos Indisponíveis
+                              </button>
+                          )}
+                      </div>
                   </div>
               </div>
           )}
