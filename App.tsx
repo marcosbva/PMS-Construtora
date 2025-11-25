@@ -15,6 +15,7 @@ import { InventoryManager } from './components/InventoryManager';
 import { RentalControl } from './components/RentalControl';
 import { ProjectStages } from './components/ProjectStages';
 import { ClientDashboard } from './components/ClientDashboard';
+import { WeeklyPlanning } from './components/WeeklyPlanning';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
 import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle, Calculator, Wrench, Phone } from 'lucide-react';
@@ -435,7 +436,7 @@ function App() {
                       </div>
                       
                       <div className="flex border-b border-slate-200 mb-4 overflow-x-auto hide-scrollbar">
-                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO', 'ALUGUEIS', 'CRONOGRAMA'].map(tab => (
+                          {['RESUMO', 'KANBAN', 'WEEKLY', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO', 'ALUGUEIS', 'CRONOGRAMA'].map(tab => (
                               <button 
                                 key={tab}
                                 onClick={() => setCurrentView(tab)}
@@ -443,6 +444,7 @@ function App() {
                               >
                                   {tab === 'RESUMO' ? 'Visão Geral' : 
                                    tab === 'KANBAN' ? 'Tarefas & Kanban' : 
+                                   tab === 'WEEKLY' ? 'Planejamento Semanal' :
                                    tab === 'DIARIO' ? 'Diário de Obra' : 
                                    tab === 'ORCAMENTO' ? 'Orçamento' :
                                    tab === 'ALUGUEIS' ? 'Aluguéis' :
@@ -469,6 +471,15 @@ function App() {
                                 users={users}
                                 currentUser={currentUser}
                                 taskStatuses={DEFAULT_TASK_STATUSES}
+                                onAddTask={(t) => api.createTask(t)}
+                                onUpdateTask={(t) => api.updateTask(t)}
+                              />
+                          )}
+                          {currentView === 'WEEKLY' && (
+                              <WeeklyPlanning
+                                workId={activeWorkId}
+                                tasks={tasks}
+                                users={users}
                                 onAddTask={(t) => api.createTask(t)}
                                 onUpdateTask={(t) => api.updateTask(t)}
                               />

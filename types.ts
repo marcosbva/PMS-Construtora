@@ -171,6 +171,7 @@ export interface Task {
   completedDate?: string;
   images: string[];
   aiAnalysis?: string;
+  planningWeek?: string; // New field: Format "YYYY-Wxx" (e.g., "2023-W42")
 }
 
 export enum FinanceType {
