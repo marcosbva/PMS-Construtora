@@ -313,3 +313,55 @@ export interface WorkBudget {
   updatedAt: string;
   version?: number;
 }
+
+// --- INVENTORY TYPES (ESTOQUE PRÓPRIO) ---
+
+export enum InventoryStatus {
+  AVAILABLE = 'Disponível',
+  IN_USE = 'Em Uso',
+  MAINTENANCE = 'Manutenção',
+  LOST = 'Perdido/Quebrado'
+}
+
+export interface InventoryItem {
+  id: string;
+  name: string;
+  category: string; // e.g. "Ferramenta Elétrica", "Andaimes", "Máquinas Pesadas"
+  brand?: string;
+  serialNumber?: string;
+  status: InventoryStatus;
+  currentWorkId?: string; // null means "Depósito/Warehouse"
+  lastMovementDate: string;
+  purchaseDate?: string;
+  imageUrl?: string;
+  notes?: string;
+}
+
+// --- RENTAL CONTROL TYPES (ALUGUEIS) ---
+
+export enum RentalStatus {
+  ACTIVE = 'Ativo (Em Uso)',
+  RETURNED = 'Devolvido',
+  OVERDUE = 'Atrasado'
+}
+
+export interface RentalItem {
+  id: string;
+  workId: string;
+  itemName: string;
+  supplierId?: string; // Link user category SUPPLIER
+  supplierName?: string; // Fallback text
+  
+  quantity: number;
+  unit: string; // e.g. 'pç', 'm²', 'conjunto'
+  
+  unitPrice: number; // Preço unitário do período
+  billingPeriod: 'Diária' | 'Semanal' | 'Quinzenal' | 'Mensal' | 'Total';
+  
+  startDate: string; // Data que chegou na obra
+  endDate: string; // Data prevista de devolução / vencimento
+  returnDate?: string; // Data real da devolução
+  
+  status: RentalStatus;
+  notes?: string;
+}

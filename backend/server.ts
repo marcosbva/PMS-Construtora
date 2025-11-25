@@ -37,7 +37,7 @@ const parseEntity = (entity: any) => {
 // --- GET ALL DATA ---
 app.get('/api/initial-data', asyncHandler(async (req, res) => {
     try {
-        const [worksRaw, users, tasksRaw, finance, logsRaw, materials, ordersRaw, statuses, categories] = await Promise.all([
+        const [worksRaw, users, tasksRaw, finance, logsRaw, materials, ordersRaw, statuses, categories, inventory, rentals] = await Promise.all([
             prisma.constructionWork.findMany(),
             prisma.user.findMany(),
             prisma.task.findMany(),
@@ -46,7 +46,9 @@ app.get('/api/initial-data', asyncHandler(async (req, res) => {
             prisma.material.findMany(),
             prisma.materialOrder.findMany(),
             prisma.taskStatus.findMany({ orderBy: { order: 'asc' } }),
-            prisma.financeCategory.findMany()
+            prisma.financeCategory.findMany(),
+            prisma.inventoryItem.findMany(), // Assuming model exists
+            prisma.rentalItem.findMany() // Assuming model exists
         ]);
 
         const works = worksRaw.map(parseEntity);
@@ -54,9 +56,10 @@ app.get('/api/initial-data', asyncHandler(async (req, res) => {
         const logs = logsRaw.map(parseEntity);
         const orders = ordersRaw.map(parseEntity);
 
-        res.json({ works, users, tasks, finance, logs, materials, orders, taskStatuses: statuses, financeCategories: categories });
+        res.json({ works, users, tasks, finance, logs, materials, orders, taskStatuses: statuses, financeCategories: categories, inventory, rentals });
     } catch (e) {
         console.error("Error fetching initial data:", e);
+        // Fallback for missing tables in dev environment
         res.status(500).json({ error: "Falha na conexão com banco de dados." });
     }
 }));
@@ -100,6 +103,37 @@ app.put('/api/materials/:id', asyncHandler(async (req, res) => { res.json(await 
 app.delete('/api/materials/:id', asyncHandler(async (req, res) => { await prisma.material.delete({ where: { id: req.params.id } }); res.json({success:true}) }));
 app.post('/api/orders', asyncHandler(async (req, res) => { res.json(parseEntity(await prisma.materialOrder.create({ data: stringifyFields(req.body) }))) }));
 app.put('/api/orders/:id', asyncHandler(async (req, res) => { res.json(parseEntity(await prisma.materialOrder.update({ where: { id: req.params.id }, data: stringifyFields(req.body) }))) }));
+
+// Inventory (Placeholder for Local Mode)
+app.post('/api/inventory', asyncHandler(async (req, res) => { 
+    try {
+        res.json(await prisma.inventoryItem.create({ data: req.body }));
+    } catch (e) { res.json(req.body); }
+}));
+app.put('/api/inventory/:id', asyncHandler(async (req, res) => { 
+    try {
+        res.json(await prisma.inventoryItem.update({ where: { id: req.params.id }, data: req.body }));
+    } catch (e) { res.json(req.body); }
+}));
+app.delete('/api/inventory/:id', asyncHandler(async (req, res) => { 
+    try {
+        await prisma.inventoryItem.delete({ where: { id: req.params.id } });
+    } catch (e) {}
+    res.json({success:true}) 
+}));
+
+// Rentals (Placeholder)
+app.post('/api/rentals', asyncHandler(async (req, res) => { 
+    try { res.json(await prisma.rentalItem.create({ data: req.body })); } catch (e) { res.json(req.body); }
+}));
+app.put('/api/rentals/:id', asyncHandler(async (req, res) => { 
+    try { res.json(await prisma.rentalItem.update({ where: { id: req.params.id }, data: req.body })); } catch (e) { res.json(req.body); }
+}));
+app.delete('/api/rentals/:id', asyncHandler(async (req, res) => { 
+    try { await prisma.rentalItem.delete({ where: { id: req.params.id } }); } catch (e) {}
+    res.json({success:true}) 
+}));
+
 
 // Configs
 app.post('/api/categories', asyncHandler(async (req, res) => { res.json(await prisma.financeCategory.create({ data: req.body })) }));

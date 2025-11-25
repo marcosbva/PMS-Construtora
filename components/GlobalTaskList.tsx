@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo } from 'react';
-import { Task, TaskStatus, TaskPriority, ConstructionWork, User, TaskStatusDefinition } from '../types';
+import { Task, TaskStatus, TaskPriority, ConstructionWork, User, TaskStatusDefinition, WorkStatus } from '../types';
 import { Filter, Search, Briefcase, Edit2, X, Save, Plus, History, CheckCircle2, HardHat, Trash2 } from 'lucide-react';
 
 interface GlobalTaskListProps {
@@ -14,6 +15,9 @@ interface GlobalTaskListProps {
 
 export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, users, taskStatuses, onUpdateTask, onAddTask, onDeleteTask }) => {
   const [viewMode, setViewMode] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
+  
+  // Filters
+  const [filterWork, setFilterWork] = useState<string>('EXECUTION'); // Default to Works in Execution
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [filterPriority, setFilterPriority] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,12 +45,22 @@ export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, us
       // 2. Filters
       const matchesStatus = filterStatus === 'ALL' || task.status === filterStatus;
       const matchesPriority = filterPriority === 'ALL' || task.priority === filterPriority;
-      // PROTEÇÃO CONTRA NULOS NO SEARCH
       const matchesSearch = (task.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                             (task.description || '').toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesStatus && matchesPriority && matchesSearch;
+      
+      // 3. Work Filter
+      const work = works.find(w => w.id === task.workId);
+      let matchesWork = true;
+      
+      if (filterWork === 'EXECUTION') {
+          matchesWork = work?.status === WorkStatus.EXECUTION;
+      } else if (filterWork !== 'ALL') {
+          matchesWork = task.workId === filterWork;
+      }
+
+      return matchesStatus && matchesPriority && matchesSearch && matchesWork;
     });
-  }, [tasks, viewMode, filterStatus, filterPriority, searchTerm]);
+  }, [tasks, works, viewMode, filterStatus, filterPriority, searchTerm, filterWork]);
 
   // Grouping logic for History view
   const groupedHistoryTasks = useMemo<Record<string, Task[]>>(() => {
@@ -262,8 +276,24 @@ export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, us
           />
         </div>
         
-        <div className="flex items-center gap-2 w-full md:w-auto">
+        <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
           <Filter size={20} className="text-slate-500" />
+          
+          {/* Work Filter */}
+          <select 
+            className="border border-slate-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-pms-500 bg-white text-sm max-w-[200px]"
+            value={filterWork}
+            onChange={(e) => setFilterWork(e.target.value)}
+          >
+            <option value="EXECUTION">Em Execução (Filtro)</option>
+            <option value="ALL">Todas as Obras</option>
+            <optgroup label="Obras Específicas">
+                {works.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+            </optgroup>
+          </select>
+
           {viewMode === 'ACTIVE' && (
              <select 
                 className="border border-slate-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-pms-500 bg-white text-sm"
@@ -311,7 +341,7 @@ export const GlobalTaskList: React.FC<GlobalTaskListProps> = ({ tasks, works, us
             </table>
             {filteredTasks.length === 0 && (
               <div className="p-8 text-center text-slate-400">
-                  Nenhuma tarefa pendente.
+                  Nenhuma tarefa pendente para o filtro selecionado.
               </div>
             )}
           </div>

@@ -17,7 +17,7 @@ import {
   Firestore
 } from "firebase/firestore";
 import { getDb } from "./firebase";
-import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, FinanceCategoryDefinition, WorkBudget } from "../types";
+import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, FinanceCategoryDefinition, WorkBudget, InventoryItem, RentalItem } from "../types";
 
 const COLLECTIONS = {
   USERS: 'users',
@@ -28,7 +28,9 @@ const COLLECTIONS = {
   MATERIALS: 'materials',
   ORDERS: 'orders',
   CATEGORIES: 'categories',
-  BUDGETS: 'budgets'
+  BUDGETS: 'budgets',
+  INVENTORY: 'inventory',
+  RENTALS: 'rentals'
 };
 
 // Helper to remove undefined fields which Firestore hates
@@ -106,15 +108,17 @@ export const api = {
           const finQ = query(collection(db, COLLECTIONS.FINANCE), where('workId', '==', id));
           const logsQ = query(collection(db, COLLECTIONS.LOGS), where('workId', '==', id));
           const ordersQ = query(collection(db, COLLECTIONS.ORDERS), where('workId', '==', id));
+          const rentalsQ = query(collection(db, COLLECTIONS.RENTALS), where('workId', '==', id));
           const budgetRef = doc(db, COLLECTIONS.BUDGETS, id); // Budget ID = Work ID
 
-          const [tS, fS, lS, oS] = await Promise.all([getDocs(tasksQ), getDocs(finQ), getDocs(logsQ), getDocs(ordersQ)]);
+          const [tS, fS, lS, oS, rS] = await Promise.all([getDocs(tasksQ), getDocs(finQ), getDocs(logsQ), getDocs(ordersQ), getDocs(rentalsQ)]);
           
           const subDeletions = [
               ...tS.docs.map(d => deleteDoc(d.ref)),
               ...fS.docs.map(d => deleteDoc(d.ref)),
               ...lS.docs.map(d => deleteDoc(d.ref)),
               ...oS.docs.map(d => deleteDoc(d.ref)),
+              ...rS.docs.map(d => deleteDoc(d.ref)),
               deleteDoc(budgetRef)
           ];
           
@@ -350,6 +354,68 @@ export const api = {
       if (!db) return;
       // Using setDoc with workId as key
       await setDoc(doc(db, COLLECTIONS.BUDGETS, budget.workId), cleanData(budget));
+  },
+
+  // --- INVENTORY ---
+  subscribeToInventory: (callback: (items: InventoryItem[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.INVENTORY));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as InventoryItem));
+      });
+  },
+  getInventory: async (): Promise<InventoryItem[]> => {
+      const db = getDb();
+      if (!db) return [];
+      const snap = await getDocs(collection(db, COLLECTIONS.INVENTORY));
+      return snap.docs.map(d => d.data() as InventoryItem);
+  },
+  createInventoryItem: async (item: InventoryItem) => {
+      const db = getDb();
+      if (!db) return;
+      await setDoc(doc(db, COLLECTIONS.INVENTORY, item.id), cleanData(item));
+  },
+  updateInventoryItem: async (item: InventoryItem) => {
+      const db = getDb();
+      if (!db) return;
+      await setDoc(doc(db, COLLECTIONS.INVENTORY, item.id), cleanData(item));
+  },
+  deleteInventoryItem: async (id: string) => {
+      const db = getDb();
+      if (!db) return;
+      await deleteDoc(doc(db, COLLECTIONS.INVENTORY, id));
+  },
+
+  // --- RENTALS (ALUGUEIS) ---
+  subscribeToRentals: (callback: (items: RentalItem[]) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const q = query(collection(db, COLLECTIONS.RENTALS));
+      return onSnapshot(q, (snap) => {
+          callback(snap.docs.map(d => d.data() as RentalItem));
+      });
+  },
+  getRentals: async (): Promise<RentalItem[]> => {
+      const db = getDb();
+      if (!db) return [];
+      const snap = await getDocs(collection(db, COLLECTIONS.RENTALS));
+      return snap.docs.map(d => d.data() as RentalItem);
+  },
+  createRental: async (item: RentalItem) => {
+      const db = getDb();
+      if (!db) return;
+      await setDoc(doc(db, COLLECTIONS.RENTALS, item.id), cleanData(item));
+  },
+  updateRental: async (item: RentalItem) => {
+      const db = getDb();
+      if (!db) return;
+      await setDoc(doc(db, COLLECTIONS.RENTALS, item.id), cleanData(item));
+  },
+  deleteRental: async (id: string) => {
+      const db = getDb();
+      if (!db) return;
+      await deleteDoc(doc(db, COLLECTIONS.RENTALS, id));
   },
 
   restoreDefaults: async () => {

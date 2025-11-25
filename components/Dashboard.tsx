@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useState } from 'react';
 import { 
   Briefcase, 
@@ -12,7 +13,8 @@ import {
   Clock,
   Calendar,
   CheckCircle2,
-  BellRing
+  BellRing,
+  Truck
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -28,7 +30,7 @@ import {
   Legend 
 } from 'recharts';
 import { api } from '../services/api';
-import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, MaterialOrder, OrderStatus } from '../types';
+import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, MaterialOrder, OrderStatus, RentalItem, RentalStatus } from '../types';
 
 const PIE_COLORS = ['#0ea5e9', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab308'];
 
@@ -48,10 +50,11 @@ interface DashboardProps {
   works: ConstructionWork[];
   finance: FinancialRecord[];
   orders?: MaterialOrder[];
+  rentals?: RentalItem[]; // ADDED
   onNavigate?: (view: string) => void; 
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [], onNavigate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [], rentals = [], onNavigate }) => {
   const [logsLoading, setLogsLoading] = useState(true);
   const [allLogs, setAllLogs] = useState<DailyLog[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
@@ -68,6 +71,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
   });
   
   const [nextExpenses, setNextExpenses] = useState<FinancialRecord[]>([]);
+  const [expiringRentals, setExpiringRentals] = useState<RentalItem[]>([]);
 
   useEffect(() => {
     const unsubLogs = api.subscribeToAllLogs((logs) => {
@@ -84,11 +88,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
     const filteredWorks = selectedWorkId === 'ALL' ? works : works.filter(w => w.id === selectedWorkId);
     const filteredFinance = selectedWorkId === 'ALL' ? finance : finance.filter(f => f.workId === selectedWorkId);
     const filteredLogs = selectedWorkId === 'ALL' ? allLogs : allLogs.filter(l => l.workId === selectedWorkId);
+    const filteredRentals = selectedWorkId === 'ALL' ? rentals : rentals.filter(r => r.workId === selectedWorkId);
 
-    calculateMetrics(filteredWorks, filteredFinance, filteredLogs);
-  }, [works, finance, allLogs, orders, selectedWorkId, logsLoading]);
+    calculateMetrics(filteredWorks, filteredFinance, filteredLogs, filteredRentals);
+  }, [works, finance, allLogs, orders, rentals, selectedWorkId, logsLoading]);
 
-  const calculateMetrics = (currentWorks: ConstructionWork[], currentFinance: FinancialRecord[], currentLogs: DailyLog[]) => {
+  const calculateMetrics = (currentWorks: ConstructionWork[], currentFinance: FinancialRecord[], currentLogs: DailyLog[], currentRentals: RentalItem[]) => {
       const activeWorksCount = currentWorks.filter(w => w.status !== 'Concluída').length;
 
       const pendingExpenseTotal = currentFinance
@@ -113,6 +118,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
         .slice(0, 5);
       
       setNextExpenses(upcoming);
+
+      // Calculate Expiring Rentals (End Date between today and today+7)
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const nextWeek = new Date(today);
+      nextWeek.setDate(today.getDate() + 7);
+
+      const expiring = currentRentals.filter(r => {
+          if (r.status !== RentalStatus.ACTIVE) return false;
+          const endDate = new Date(r.endDate);
+          endDate.setHours(0,0,0,0); // Normalize time
+          return endDate >= today && endDate <= nextWeek;
+      });
+      setExpiringRentals(expiring);
+
 
       const workExpenses: Record<string, number> = {};
       const workNames: Record<string, string> = {};
@@ -189,6 +209,34 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
             </select>
         </div>
       </div>
+
+      {/* ALERTS SECTION (Expiring Rentals) */}
+      {expiringRentals.length > 0 && (
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-2">
+              <h3 className="text-red-800 font-bold flex items-center gap-2 mb-3">
+                  <BellRing size={20} className="animate-pulse" /> Atenção: Aluguéis Vencendo
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {expiringRentals.map(rental => {
+                      const workName = works.find(w => w.id === rental.workId)?.name || 'Obra Desconhecida';
+                      return (
+                          <div key={rental.id} className="bg-white p-3 rounded-lg border border-red-200 shadow-sm flex items-center gap-3">
+                              <div className="bg-red-100 p-2 rounded text-red-600">
+                                  <Truck size={18} />
+                              </div>
+                              <div>
+                                  <p className="font-bold text-slate-800 text-sm">{rental.itemName}</p>
+                                  <p className="text-xs text-slate-500">{workName}</p>
+                                  <p className="text-xs font-bold text-red-600 mt-1">
+                                      Vence: {new Date(rental.endDate).toLocaleDateString('pt-BR')}
+                                  </p>
+                              </div>
+                          </div>
+                      );
+                  })}
+              </div>
+          </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-blue-300 transition-colors">

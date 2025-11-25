@@ -1,6 +1,7 @@
 
+
 import React, { useState, useEffect } from 'react';
-import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition } from './types';
+import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition, InventoryItem, RentalItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { KanbanBoard } from './components/KanbanBoard';
 import { FinanceView } from './components/FinanceView';
@@ -11,9 +12,11 @@ import { DailyLogView } from './components/DailyLog';
 import { Dashboard } from './components/Dashboard';
 import { WorkOverview } from './components/WorkOverview';
 import { BudgetPlanner } from './components/BudgetPlanner';
+import { InventoryManager } from './components/InventoryManager';
+import { RentalControl } from './components/RentalControl';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
-import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle, Calculator } from 'lucide-react';
+import { Loader2, Trash2, LayoutGrid, HardHat, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, AlertTriangle, Calculator, Wrench } from 'lucide-react';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -27,6 +30,8 @@ function App() {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [orders, setOrders] = useState<MaterialOrder[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [rentals, setRentals] = useState<RentalItem[]>([]); // New State for Rentals
   const [financeCategories, setFinanceCategories] = useState<FinanceCategoryDefinition[]>(DEFAULT_FINANCE_CATEGORIES);
   const [permissions, setPermissions] = useState<RolePermissionsMap>(DEFAULT_ROLE_PERMISSIONS);
 
@@ -47,11 +52,11 @@ function App() {
       if (!api.isOnline()) {
           // Fallback for offline mode
           const loadOfflineData = async () => {
-              const [u, w, t, f, l, m, o, cats] = await Promise.all([
+              const [u, w, t, f, l, m, o, cats, inv, r] = await Promise.all([
                   api.getUsers(), api.getWorks(), api.getTasks(), api.getFinance(), 
-                  api.getLogs(), api.getMaterials(), api.getOrders(), api.getCategories()
+                  api.getLogs(), api.getMaterials(), api.getOrders(), api.getCategories(), api.getInventory(), api.getRentals()
               ]);
-              setUsers(u); setWorks(w); setTasks(t); setFinance(f); setLogs(l); setMaterials(m); setOrders(o);
+              setUsers(u); setWorks(w); setTasks(t); setFinance(f); setLogs(l); setMaterials(m); setOrders(o); setInventory(inv); setRentals(r);
               if (m.length === 0) setMaterials(DEFAULT_MATERIALS);
               if (cats.length > 0) setFinanceCategories(cats);
               setIsLoading(false);
@@ -76,6 +81,8 @@ function App() {
           if (cats.length === 0) setFinanceCategories(DEFAULT_FINANCE_CATEGORIES);
           else setFinanceCategories(cats);
       });
+      const unsubInventory = api.subscribeToInventory(setInventory);
+      const unsubRentals = api.subscribeToRentals(setRentals);
 
       // Fetch global logs for global dashboard
       const unsubAllLogs = api.subscribeToAllLogs(setLogs);
@@ -84,7 +91,7 @@ function App() {
 
       return () => {
           unsubUsers(); unsubWorks(); unsubTasks(); unsubFinance(); 
-          unsubMaterials(); unsubOrders(); unsubCats(); unsubAllLogs();
+          unsubMaterials(); unsubOrders(); unsubCats(); unsubAllLogs(); unsubInventory(); unsubRentals();
       };
   }, []);
 
@@ -147,6 +154,7 @@ function App() {
               setFinance(prev => prev.filter(f => f.workId !== id));
               setLogs(prev => prev.filter(l => l.workId !== id));
               setOrders(prev => prev.filter(o => o.workId !== id));
+              setRentals(prev => prev.filter(r => r.workId !== id));
 
               setIsEditWorkModalOpen(false);
               
@@ -191,18 +199,16 @@ function App() {
               </div>
           </div>
           
-          <nav className="flex-1 p-4 space-y-1">
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto hide-scrollbar">
               <button onClick={() => { setCurrentView('DASHBOARD'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'DASHBOARD' && !activeWorkId ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <LayoutGrid size={18} /> Dashboard
               </button>
               <button onClick={() => { setCurrentView('WORKS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'WORKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Briefcase size={18} /> Obras
               </button>
-              {/* NEW BUDGET BUTTON */}
               <button onClick={() => { setCurrentView('BUDGET'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'BUDGET' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Calculator size={18} /> Orçamentos
               </button>
-
               <button onClick={() => { setCurrentView('TASKS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'TASKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Menu size={18} /> Tarefas Gerais
               </button>
@@ -211,6 +217,10 @@ function App() {
               </button>
               <button onClick={() => { setCurrentView('MATERIALS'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'MATERIALS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Package size={18} /> Materiais & Compras
+              </button>
+              {/* NEW INVENTORY BUTTON */}
+              <button onClick={() => { setCurrentView('INVENTORY'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'INVENTORY' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                  <Wrench size={18} /> Estoque & Equip.
               </button>
               <button onClick={() => { setCurrentView('TEAM'); setActiveWorkId(null); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold transition-all ${currentView === 'TEAM' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
                   <Users size={18} /> Equipe & Config
@@ -246,7 +256,8 @@ function App() {
                   <Dashboard 
                     works={works} 
                     finance={finance} 
-                    orders={orders} 
+                    orders={orders}
+                    rentals={rentals}
                     onNavigate={(view) => { setCurrentView(view); setActiveWorkId(null); }}
                   />
               )}
@@ -307,7 +318,7 @@ function App() {
                       </div>
                       
                       <div className="flex border-b border-slate-200 mb-4 overflow-x-auto">
-                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO'].map(tab => (
+                          {['RESUMO', 'KANBAN', 'DIARIO', 'FINANCEIRO', 'ORCAMENTO', 'ALUGUEIS'].map(tab => (
                               <button 
                                 key={tab}
                                 onClick={() => setCurrentView(tab)}
@@ -317,6 +328,7 @@ function App() {
                                    tab === 'KANBAN' ? 'Tarefas & Kanban' : 
                                    tab === 'DIARIO' ? 'Diário de Obra' : 
                                    tab === 'ORCAMENTO' ? 'Orçamento' :
+                                   tab === 'ALUGUEIS' ? 'Aluguéis' :
                                    'Financeiro'}
                               </button>
                           ))}
@@ -374,6 +386,17 @@ function App() {
                                 activeWorkId={activeWorkId}
                               />
                           )}
+                          {currentView === 'ALUGUEIS' && (
+                              <RentalControl
+                                rentals={rentals}
+                                workId={activeWorkId}
+                                suppliers={users.filter(u => u.category === UserCategory.SUPPLIER)}
+                                onAdd={(r) => api.createRental(r)}
+                                onUpdate={(r) => api.updateRental(r)}
+                                onDelete={(id) => api.deleteRental(id)}
+                                onAddFinance={(f) => api.createFinance(f)} // PASSING FINANCE CREATION HANDLER
+                              />
+                          )}
                       </div>
                   </div>
               )}
@@ -381,6 +404,17 @@ function App() {
               {/* BUDGET PLANNER VIEW (Global) */}
               {currentView === 'BUDGET' && !activeWorkId && (
                   <BudgetPlanner works={works} />
+              )}
+
+              {/* INVENTORY VIEW */}
+              {currentView === 'INVENTORY' && !activeWorkId && (
+                  <InventoryManager 
+                    inventory={inventory}
+                    works={works}
+                    onAdd={(item) => api.createInventoryItem(item)}
+                    onUpdate={(item) => api.updateInventoryItem(item)}
+                    onDelete={(id) => api.deleteInventoryItem(id)}
+                  />
               )}
 
               {currentView === 'TASKS' && !activeWorkId && (
