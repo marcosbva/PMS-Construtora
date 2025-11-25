@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog } from '../types';
-import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat, Upload, Eye } from 'lucide-react';
+import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat, Upload, Eye, Lock } from 'lucide-react';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
 import { WorkforceSummary } from './WorkforceSummary';
@@ -28,6 +28,9 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
     setFormData(work);
     setIsDirty(false);
   }, [work]);
+
+  // Check if progress is managed by Stages
+  const isProgressManagedByStages = (formData.stages && formData.stages.length > 0);
 
   // Fetch Budget Data from the new Module
   useEffect(() => {
@@ -397,14 +400,22 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
                 </div>
 
                 <div className="mb-4">
-                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Progresso Geral</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-2 uppercase flex justify-between">
+                        <span>Progresso Geral</span>
+                        {isProgressManagedByStages && (
+                            <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                <Lock size={10}/> Calculado via Cronograma
+                            </span>
+                        )}
+                    </label>
                     <div className="flex items-center gap-3">
                         <input 
                             type="range" 
                             min="0" max="100" 
                             value={formData.progress} 
                             onChange={(e) => handleChange('progress', parseInt(e.target.value))}
-                            className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-pms-600"
+                            disabled={isProgressManagedByStages}
+                            className={`w-full h-2 bg-slate-200 rounded-lg appearance-none accent-pms-600 ${isProgressManagedByStages ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                         />
                         <span className="font-bold text-slate-800 min-w-[3rem] text-right">{formData.progress}%</span>
                     </div>

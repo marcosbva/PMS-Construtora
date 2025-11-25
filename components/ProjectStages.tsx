@@ -22,6 +22,24 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
     return { count: completed, percent: Math.round((completed / total) * 100) };
   }, [stages]);
 
+  // Helper to calculate and update work progress
+  const updateWorkProgress = (currentStages: WorkStage[]) => {
+      const total = currentStages.length;
+      let newProgress = 0;
+      
+      if (total > 0) {
+          const completed = currentStages.filter(s => s.status === 'COMPLETED').length;
+          newProgress = Math.round((completed / total) * 100);
+      }
+
+      // Update Work with new Stages AND new Progress
+      onUpdateWork({ 
+          ...work, 
+          stages: currentStages,
+          progress: newProgress 
+      });
+  };
+
   const handleAddStage = () => {
     if (!newStageName.trim()) return;
 
@@ -33,14 +51,14 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
     };
 
     const updatedStages = [...(work.stages || []), newStage];
-    onUpdateWork({ ...work, stages: updatedStages });
+    updateWorkProgress(updatedStages);
     setNewStageName('');
   };
 
   const handleDeleteStage = (stageId: string) => {
     if(!window.confirm("Excluir esta etapa?")) return;
     const updatedStages = stages.filter(s => s.id !== stageId);
-    onUpdateWork({ ...work, stages: updatedStages });
+    updateWorkProgress(updatedStages);
   };
 
   const handleStatusChange = (stageId: string, currentStatus: StageStatus) => {
@@ -53,9 +71,7 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
       s.id === stageId ? { ...s, status: nextStatus } : s
     );
     
-    // Calculate new progress for the Work entity if desired (optional sync)
-    // For now, we just update the stages array
-    onUpdateWork({ ...work, stages: updatedStages });
+    updateWorkProgress(updatedStages);
   };
 
   return (
@@ -66,7 +82,7 @@ export const ProjectStages: React.FC<ProjectStagesProps> = ({ work, onUpdateWork
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Calendar className="text-pms-600" /> Cronograma & Etapas
           </h2>
-          <p className="text-slate-500">Defina as fases macro da obra para acompanhamento do cliente.</p>
+          <p className="text-slate-500">Defina as fases macro da obra. O progresso geral será atualizado automaticamente.</p>
         </div>
       </div>
 
