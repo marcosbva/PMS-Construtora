@@ -96,19 +96,21 @@ export const summarizeLogs = async (logs: string[]) => {
 /**
  * Generates an intelligent construction budget structure (WBS/EAP) based on work details and optional image.
  */
-export const generateBudgetStructure = async (workName: string, workDescription: string, imageBase64?: string): Promise<BudgetCategory[]> => {
+export const generateBudgetStructure = async (workName: string, workDescription: string, fileBase64?: string): Promise<BudgetCategory[]> => {
   try {
     const textPrompt = `
-      Atue como um Engenheiro Civil Sênior Especialista em Orçamentos e BIM.
-      Crie uma Estrutura Analítica de Projeto (EAP) / Orçamento Estimativo para a seguinte obra:
+      Atue como um Engenheiro Civil Sênior, Especialista em Orçamentos de Obras Residenciais e BIM Manager.
+      Sua tarefa é criar uma Estrutura Analítica de Projeto (EAP) detalhada e profissional para a seguinte obra:
       
       Nome da Obra: ${workName}
       Descrição e Escopo: ${workDescription}
 
-      ${imageBase64 ? 'Uma imagem técnica (planta/esboço) foi fornecida. Use-a para estimar quantidades (áreas de piso, parede, número de pontos elétricos) com mais precisão.' : ''}
+      ${fileBase64 ? 'Um arquivo técnico (Planta Baixa em Imagem ou Projeto em PDF) foi fornecido. ANALISE VISUALMENTE este arquivo para extrair quantitativos (m² de alvenaria, contagem de pontos elétricos, áreas de piso) e identificar especificações técnicas implícitas.' : ''}
 
-      Gere uma lista de etapas (Categorias) e serviços principais (Itens) que são essenciais para este tipo de obra.
-      Para cada item, estime uma unidade de medida padrão (m², un, m³, vb) e uma quantidade aproximada baseada na descrição (chute educado e realista se não houver dados exatos). O preço unitário pode ser 0.
+      Regras de Negócio:
+      1. Seja extremamente técnico e detalhista. Não use termos genéricos. Use termos de orçamentação (ex: "Regularização de contrapiso", "Emboço paulista", "Pintura Acrílica 2 demãos").
+      2. Estime quantidades realistas baseadas na descrição e no arquivo fornecido. Se não houver dados exatos, use sua experiência em obras residenciais para projetar uma média segura.
+      3. Organize em etapas lógicas construtivas (Preliminares -> Estrutura -> Vedação -> Instalações -> Acabamentos).
 
       Responda EXCLUSIVAMENTE um JSON com o seguinte formato (Array de Categories):
       [
@@ -117,7 +119,7 @@ export const generateBudgetStructure = async (workName: string, workDescription:
           "name": "1. Serviços Preliminares",
           "categoryTotal": 0,
           "items": [
-             { "id": "item_1", "description": "Limpeza do Terreno", "unit": "m²", "quantity": 100, "unitPrice": 0, "totalPrice": 0, "notes": "Estimado" }
+             { "id": "item_1", "description": "Limpeza mecanizada do terreno", "unit": "m²", "quantity": 100, "unitPrice": 0, "totalPrice": 0, "notes": "Estimado via análise visual" }
           ]
         },
         ...
@@ -128,10 +130,10 @@ export const generateBudgetStructure = async (workName: string, workDescription:
 
     let contents: any;
 
-    if (imageBase64) {
+    if (fileBase64) {
       // Extract mime type and data from data URL
-      // Format: data:image/png;base64,iVBORw0KGgo...
-      const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
+      // Format: data:image/png;base64,iVBORw0KGgo... OR data:application/pdf;base64,...
+      const matches = fileBase64.match(/^data:(.+);base64,(.+)$/);
       if (matches && matches.length === 3) {
          const mimeType = matches[1];
          const data = matches[2];

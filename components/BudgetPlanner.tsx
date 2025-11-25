@@ -23,7 +23,9 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
     // AI Modal State
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [aiScopeText, setAiScopeText] = useState('');
-    const [aiImage, setAiImage] = useState<string | null>(null);
+    const [aiFile, setAiFile] = useState<string | null>(null); // Base64 string (Image or PDF)
+    const [aiFileName, setAiFileName] = useState<string>('');
+    const [aiFileType, setAiFileType] = useState<'image' | 'pdf' | null>(null);
 
     // Proposal Modal State
     const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
@@ -99,17 +101,23 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         const initialText = `Obra: ${selectedWork.name}\n\nDescrição do Projeto:\n${selectedWork.description || 'Descreva aqui o escopo detalhado (ex: Construção de casa 200m², alto padrão, 2 pavimentos, piscina, acabamento em porcelanato...)'}`;
         
         setAiScopeText(initialText);
-        setAiImage(null);
+        setAiFile(null);
+        setAiFileName('');
+        setAiFileType(null);
         setIsAiModalOpen(true);
     };
 
-    const handleAiImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleAiFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const file = e.target.files[0];
+            const isPdf = file.type === 'application/pdf';
             const reader = new FileReader();
+            
             reader.onloadend = () => {
                 if (reader.result) {
-                    setAiImage(reader.result as string);
+                    setAiFile(reader.result as string);
+                    setAiFileName(file.name);
+                    setAiFileType(isPdf ? 'pdf' : 'image');
                 }
             };
             reader.readAsDataURL(file);
@@ -121,11 +129,11 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
         
         setIsGenerating(true);
         try {
-            // We pass the user-edited scope text and optional image to the AI service
+            // We pass the user-edited scope text and optional file (Image/PDF) to the AI service
             const aiCategories = await generateBudgetStructure(
                 selectedWork.name, 
                 aiScopeText,
-                aiImage || undefined
+                aiFile || undefined
             );
             
             // Recalculate Totals just in case
@@ -154,7 +162,7 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                     `• [ ${String(item.quantity).padEnd(3)} ${item.unit.padEnd(4)} ]  ${item.description}`
                 ).join('\n');
 
-                const taskDescription = `Orçamento Aprovado - Escopo Detalhado:\n\n${itemsTable}\n\nGerado via Módulo de Orçamentos.`;
+                const taskDescription = `Orçamento Aprovado - Escopo Detalhado:\n\n${itemsTable}\n\nGerado via Módulo de Orçamentos (BIM AI).`;
 
                 const newTask: Task = {
                     id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -172,7 +180,7 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
             await Promise.all(tasksPromises);
             
             setIsAiModalOpen(false);
-            alert("Orçamento gerado! As etapas foram adicionadas automaticamente ao Quadro Kanban com o escopo detalhado.");
+            alert("Orçamento BIM gerado! As etapas foram adicionadas automaticamente ao Quadro Kanban com o escopo detalhado.");
 
         } catch (error) {
             alert("Erro ao gerar orçamento com IA. Tente detalhar mais o escopo ou usar uma imagem menor.");
@@ -585,10 +593,10 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                         <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
                             <div>
                                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                    <BrainCircuit className="text-purple-600" /> Gerar EAP com IA
+                                    <BrainCircuit className="text-purple-600" /> Gerar EAP com IA (BIM)
                                 </h3>
                                 <p className="text-sm text-slate-500">
-                                    Descreva o escopo e opcionalmente envie uma imagem (planta/esboço).
+                                    A IA atuará como um Especialista BIM para analisar o escopo e arquivos técnicos.
                                 </p>
                             </div>
                             <button 
@@ -601,23 +609,35 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                         </div>
 
                         <div className="flex-1 overflow-y-auto mb-4 custom-scroll pr-2">
-                            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4 text-xs text-blue-700">
-                                <strong>Dica:</strong> Quanto mais detalhada a descrição (metragem, padrão de acabamento, etc.), mais preciso será o orçamento. Se enviar uma planta, a IA tentará estimar quantitativos visuais.
+                            <div className="bg-purple-50 border border-purple-100 rounded-lg p-3 mb-4 text-xs text-purple-700 flex items-start gap-2">
+                                <BrainCircuit size={16} className="mt-0.5 shrink-0"/>
+                                <div>
+                                    <strong>Modo Especialista:</strong> O sistema analisará plantas em PDF ou Imagens para extrair quantitativos visuais e estruturar o orçamento com precisão de engenharia.
+                                </div>
                             </div>
                             
-                            {/* IMAGE UPLOAD SECTION */}
+                            {/* FILE UPLOAD SECTION */}
                             <div className="mb-4">
                                 <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-1">
-                                    <ImageIcon size={16} /> Planta Baixa / Esboço (Opcional)
+                                    <Upload size={16} /> Arquivo Técnico (Planta Baixa / Projeto)
                                 </label>
                                 
-                                {aiImage ? (
-                                    <div className="relative w-full h-40 bg-slate-100 rounded-lg overflow-hidden border border-slate-200 group">
-                                        <img src={aiImage} alt="Reference" className="w-full h-full object-contain" />
+                                {aiFile ? (
+                                    <div className="relative w-full h-40 bg-slate-100 rounded-lg overflow-hidden border border-slate-200 group flex items-center justify-center">
+                                        {aiFileType === 'image' ? (
+                                            <img src={aiFile} alt="Reference" className="w-full h-full object-contain" />
+                                        ) : (
+                                            <div className="flex flex-col items-center text-slate-600">
+                                                <FileText size={48} className="text-red-500 mb-2" />
+                                                <span className="font-bold text-sm">{aiFileName}</span>
+                                                <span className="text-xs text-slate-400">Documento PDF Carregado</span>
+                                            </div>
+                                        )}
+                                        
                                         <button 
-                                            onClick={() => setAiImage(null)}
+                                            onClick={() => { setAiFile(null); setAiFileName(''); setAiFileType(null); }}
                                             className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full opacity-80 hover:opacity-100 shadow-sm"
-                                            title="Remover imagem"
+                                            title="Remover arquivo"
                                         >
                                             <X size={16} />
                                         </button>
@@ -625,23 +645,26 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                                 ) : (
                                     <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
                                         <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                            <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                                            <p className="text-xs text-slate-500 font-bold">Clique para enviar imagem</p>
-                                            <p className="text-[10px] text-slate-400">JPG, PNG (Max 5MB)</p>
+                                            <div className="flex gap-2 mb-2 text-slate-400">
+                                                <ImageIcon size={24} />
+                                                <FileText size={24} />
+                                            </div>
+                                            <p className="text-xs text-slate-500 font-bold">Clique para enviar Imagem ou PDF</p>
+                                            <p className="text-[10px] text-slate-400">JPG, PNG, PDF (Max 5MB)</p>
                                         </div>
-                                        <input type="file" className="hidden" accept="image/*" onChange={handleAiImageUpload} />
+                                        <input type="file" className="hidden" accept="image/*,application/pdf" onChange={handleAiFileUpload} />
                                     </label>
                                 )}
                             </div>
 
                             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-1">
-                                <FileText size={16} /> Descrição do Escopo
+                                <FileText size={16} /> Descrição Complementar do Escopo
                             </label>
                             <textarea 
-                                className="w-full h-40 border border-slate-300 rounded-lg p-4 text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none leading-relaxed"
+                                className="w-full h-32 border border-slate-300 rounded-lg p-4 text-sm focus:ring-2 focus:ring-purple-500 outline-none resize-none leading-relaxed"
                                 value={aiScopeText}
                                 onChange={(e) => setAiScopeText(e.target.value)}
-                                placeholder="Ex: Construção residencial de 150m², fundação em radier, alvenaria estrutural, telhado colonial, acabamento médio padrão..."
+                                placeholder="Ex: Acabamento de alto padrão, porcelanato 90x90, pintura acrílica suvinil, rodapé santa luzia..."
                                 disabled={isGenerating}
                             />
                         </div>
@@ -656,13 +679,13 @@ export const BudgetPlanner: React.FC<BudgetPlannerProps> = ({ works, activeWorkI
                             </button>
                             <button 
                                 onClick={executeAiGeneration}
-                                disabled={isGenerating || !aiScopeText.trim()}
+                                disabled={isGenerating || (!aiScopeText.trim() && !aiFile)}
                                 className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 font-bold shadow-lg shadow-purple-600/20 flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {isGenerating ? (
                                     <>
                                         <Loader2 size={18} className="animate-spin" />
-                                        Analisando e Gerando...
+                                        BIM AI Analisando...
                                     </>
                                 ) : (
                                     <>
