@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog } from '../types';
-import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink } from 'lucide-react';
+import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat } from 'lucide-react';
 import { api } from '../services/api';
 import { WorkforceSummary } from './WorkforceSummary';
 
@@ -180,6 +180,22 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
                              <option value="">Selecione...</option>
                              {users.filter(u => u.category === UserCategory.CLIENT).map(u => (
                                  <option key={u.id} value={u.id}>{u.name}</option>
+                             ))}
+                         </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase flex items-center gap-1">
+                            <HardHat size={14} /> Responsável Técnico
+                        </label>
+                         <select 
+                            className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                            value={formData.responsibleId || ''}
+                            onChange={e => handleChange('responsibleId', e.target.value)}
+                         >
+                             <option value="">Selecione o Engenheiro/Mestre...</option>
+                             {users.filter(u => u.category === UserCategory.INTERNAL).map(u => (
+                                 <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
                              ))}
                          </select>
                     </div>

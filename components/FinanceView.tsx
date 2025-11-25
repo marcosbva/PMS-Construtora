@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { FinancialRecord, FinanceType, User, UserRole, ConstructionWork, FinanceCategoryDefinition, WorkBudget } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as ReTooltip, Legend } from 'recharts';
-import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon, Filter, ArrowDown, Plus, BarChart3, FileDown, Printer, Loader2 } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, AlertTriangle, X, Calendar, Tag, FileText, Edit2, Trash2, CheckCircle2, ArrowRight, Clock, User as UserIcon, Filter, ArrowDown, Plus, BarChart3, FileDown, Printer, Loader2, Calculator, Target } from 'lucide-react';
 import { api } from '../services/api';
 import { generateFinancialReportText } from '../services/geminiService';
 
@@ -86,6 +86,37 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
     });
     return Object.keys(categoryMap).map(key => ({ name: key, value: categoryMap[key] }));
   }, [records]);
+
+  // --- BUDGET COMPARISON LOGIC ---
+  const budgetComparison = useMemo(() => {
+      if (!workBudget) return null;
+
+      const categories = workBudget.categories.map(cat => {
+          // Sum all expenses linked to this budget category ID
+          // Note: We include 'Pendente' in "Realizado" for comparison? Usually Realized = Paid.
+          // Let's strictly use 'Pago' for "Realized Cost", but maybe show 'Committed' (Pending) as secondary.
+          // For this requested dashboard "Valor Pago", we use only 'Pago'.
+          const realized = records
+              .filter(r => r.relatedBudgetCategoryId === cat.id && r.type === FinanceType.EXPENSE && r.status === 'Pago')
+              .reduce((sum, r) => sum + r.amount, 0);
+          
+          return {
+              id: cat.id,
+              name: cat.name,
+              planned: cat.categoryTotal,
+              realized: realized,
+              percent: cat.categoryTotal > 0 ? (realized / cat.categoryTotal) * 100 : 0,
+              isOverBudget: realized > cat.categoryTotal
+          };
+      });
+
+      const totalPlanned = workBudget.totalValue;
+      const totalRealized = categories.reduce((acc, c) => acc + c.realized, 0);
+      const totalPercent = totalPlanned > 0 ? (totalRealized / totalPlanned) * 100 : 0;
+
+      return { categories, totalPlanned, totalRealized, totalPercent };
+  }, [workBudget, records]);
+
 
   // --- LOGIC CHANGE: AGGREGATE BY SUPPLIER ---
   const financialSummary = useMemo(() => {
@@ -360,6 +391,91 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         </div>
       </div>
 
+      {/* --- BUDGET VS ACTUAL DASHBOARD (Only if Work Budget Exists) --- */}
+      {budgetComparison && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                  <div>
+                      <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                          <Target className="text-pms-600" size={20} />
+                          Acompanhamento Orçamentário (Orçado x Pago)
+                      </h3>
+                      <p className="text-sm text-slate-500">Comparativo entre o orçamento aprovado e os pagamentos realizados.</p>
+                  </div>
+                  <div className="text-right">
+                      <span className="text-xs font-bold text-slate-400 uppercase block">Execução Global</span>
+                      <div className="flex items-center gap-2 justify-end">
+                          <span className={`text-lg font-bold ${budgetComparison.totalPercent > 100 ? 'text-red-600' : 'text-slate-800'}`}>
+                              {budgetComparison.totalPercent.toFixed(1)}%
+                          </span>
+                          <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                              <div 
+                                  className={`h-full rounded-full ${budgetComparison.totalPercent > 100 ? 'bg-red-500' : 'bg-pms-500'}`} 
+                                  style={{ width: `${Math.min(budgetComparison.totalPercent, 100)}%` }}
+                              />
+                          </div>
+                      </div>
+                  </div>
+              </div>
+              
+              <div className="p-6">
+                  {/* Summary Header */}
+                  <div className="grid grid-cols-3 gap-4 mb-6 text-center border-b border-slate-100 pb-4">
+                      <div>
+                          <p className="text-xs text-slate-400 uppercase font-bold">Total Orçado</p>
+                          <p className="text-xl font-bold text-slate-800">R$ {budgetComparison.totalPlanned.toLocaleString('pt-BR', { notation: 'compact' })}</p>
+                      </div>
+                      <div>
+                          <p className="text-xs text-slate-400 uppercase font-bold">Total Pago</p>
+                          <p className={`text-xl font-bold ${budgetComparison.totalRealized > budgetComparison.totalPlanned ? 'text-red-600' : 'text-green-600'}`}>
+                              R$ {budgetComparison.totalRealized.toLocaleString('pt-BR', { notation: 'compact' })}
+                          </p>
+                      </div>
+                      <div>
+                          <p className="text-xs text-slate-400 uppercase font-bold">Saldo</p>
+                          <p className="text-xl font-bold text-blue-600">
+                              R$ {(budgetComparison.totalPlanned - budgetComparison.totalRealized).toLocaleString('pt-BR', { notation: 'compact' })}
+                          </p>
+                      </div>
+                  </div>
+
+                  {/* Detailed List */}
+                  <div className="space-y-4 max-h-80 overflow-y-auto pr-2 custom-scroll">
+                      {budgetComparison.categories.map(cat => (
+                          <div key={cat.id} className="group">
+                              <div className="flex justify-between items-end mb-1 text-sm">
+                                  <span className="font-bold text-slate-700">{cat.name}</span>
+                                  <div className="text-right">
+                                      <span className="text-slate-500 text-xs mr-2">
+                                          Orçado: R$ {cat.planned.toLocaleString('pt-BR', { notation: 'compact' })}
+                                      </span>
+                                      <span className={`font-bold ${cat.isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
+                                          Pago: R$ {cat.realized.toLocaleString('pt-BR', { notation: 'compact' })}
+                                      </span>
+                                  </div>
+                              </div>
+                              <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden relative">
+                                  {/* Planned Marker (Background is sufficient, bar represents Actual) */}
+                                  <div 
+                                      className={`h-full rounded-full transition-all duration-500 ${cat.isOverBudget ? 'bg-red-500' : 'bg-green-500'}`} 
+                                      style={{ width: `${Math.min(cat.percent, 100)}%` }}
+                                  />
+                              </div>
+                              <p className="text-[10px] text-right text-slate-400 mt-0.5">
+                                  {cat.percent.toFixed(1)}% utilizado
+                              </p>
+                          </div>
+                      ))}
+                      {budgetComparison.categories.length === 0 && (
+                          <div className="text-center py-4 text-slate-400 text-sm italic">
+                              O orçamento ainda não possui categorias definidas.
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Graphs Row: Income & Expense Mix */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
          {/* Income Dashboard Specifics */}
@@ -388,7 +504,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
 
         {/* Expense Chart */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-80">
-          <h3 className="font-bold text-slate-700 mb-4">Despesas por Categoria</h3>
+          <h3 className="font-bold text-slate-700 mb-4">Despesas por Categoria (Geral)</h3>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie

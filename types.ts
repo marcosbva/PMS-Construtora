@@ -103,6 +103,7 @@ export interface ConstructionWork {
   name: string;
   client: string; 
   clientId?: string;
+  responsibleId?: string; // ID do Engenheiro/Responsável Técnico
   address: string;
   status: WorkStatus;
   progress: number;

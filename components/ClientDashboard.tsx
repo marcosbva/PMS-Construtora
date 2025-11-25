@@ -1,16 +1,18 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, User } from '../types';
 import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, ChevronRight, Download } from 'lucide-react';
 
 interface ClientDashboardProps {
   currentUser: User;
+  users: User[]; // Users list to find the responsible engineer
   works: ConstructionWork[];
   finance: FinancialRecord[];
   logs: DailyLog[];
 }
 
-export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, works, finance, logs }) => {
+export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, users, works, finance, logs }) => {
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'FINANCE' | 'GALLERY'>('OVERVIEW');
 
   // SECURITY: Strictly filter work by Client ID
@@ -28,6 +30,12 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, w
     if (!myWork) return [];
     return logs.filter(l => l.workId === myWork.id && l.images && l.images.length > 0);
   }, [logs, myWork]);
+
+  // Find Responsible Engineer
+  const responsibleEngineer = useMemo(() => {
+      if (!myWork || !myWork.responsibleId) return null;
+      return users.find(u => u.id === myWork.responsibleId);
+  }, [myWork, users]);
 
   // Calculations
   const totalInvested = useMemo(() => {
@@ -70,6 +78,10 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, w
       </div>
     );
   }
+
+  // Construct WhatsApp Link
+  const waNumber = responsibleEngineer?.phone ? responsibleEngineer.phone.replace(/\D/g, '') : '';
+  const waLink = waNumber ? `https://wa.me/55${waNumber}` : '#';
 
   return (
     <div className="pb-20 animate-fade-in">
@@ -163,15 +175,27 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, w
                           <Phone size={32} />
                       </div>
                       <h3 className="font-bold text-slate-800 mb-2">Fale com o Engenheiro</h3>
-                      <p className="text-sm text-slate-500 mb-6">Dúvidas sobre o andamento? Entre em contato direto.</p>
-                      <a 
-                        href="https://wa.me/5511999999999" // Replace with actual company number
-                        target="_blank"
-                        rel="noreferrer"
-                        className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 flex items-center gap-2 transition-all transform hover:scale-105"
-                      >
-                          WhatsApp da Obra <ChevronRight size={16} />
-                      </a>
+                      <p className="text-sm text-slate-500 mb-1">Dúvidas sobre o andamento? Entre em contato direto.</p>
+                      {responsibleEngineer ? (
+                          <p className="text-sm font-bold text-slate-700 mb-4">{responsibleEngineer.name}</p>
+                      ) : (
+                          <p className="text-xs text-slate-400 mb-4 italic">Nenhum responsável atribuído.</p>
+                      )}
+                      
+                      {waNumber ? (
+                          <a 
+                            href={waLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 flex items-center gap-2 transition-all transform hover:scale-105"
+                          >
+                              WhatsApp da Obra <ChevronRight size={16} />
+                          </a>
+                      ) : (
+                          <button disabled className="bg-slate-100 text-slate-400 px-6 py-3 rounded-xl font-bold cursor-not-allowed">
+                              Contato Indisponível
+                          </button>
+                      )}
                   </div>
               </div>
           )}

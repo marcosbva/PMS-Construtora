@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, FinanceType, TaskStatus, TaskPriority, FinanceCategoryDefinition, InventoryItem, RentalItem } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -220,9 +221,6 @@ function App() {
                       <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold bg-pms-600 text-white shadow-lg shadow-pms-600/30">
                           <LayoutGrid size={18} /> Meu Painel
                       </button>
-                      <a href="https://wa.me/5511999999999" target="_blank" className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-bold text-slate-400 hover:bg-green-600 hover:text-white transition-colors">
-                          <Phone size={18} /> Falar com Engenheiro
-                      </a>
                   </nav>
 
                   <div className="p-4 border-t border-slate-800">
@@ -245,6 +243,7 @@ function App() {
                   <div className="flex-1 overflow-auto p-4 md:p-8">
                       <ClientDashboard 
                           currentUser={currentUser}
+                          users={users}
                           works={works}
                           finance={finance}
                           logs={logs}
@@ -665,6 +664,23 @@ function App() {
                              </select>
                         </div>
                     </div>
+                    
+                    <div>
+                         <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-1">
+                             <HardHat size={16} /> Responsável Técnico (Engenheiro)
+                         </label>
+                         <select 
+                            className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none bg-white"
+                            value={editingWork.responsibleId || ''}
+                            onChange={e => setEditingWork({...editingWork, responsibleId: e.target.value})}
+                         >
+                             <option value="">Selecione o Responsável...</option>
+                             {users.filter(u => u.category === UserCategory.INTERNAL).map(u => (
+                                 <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                             ))}
+                         </select>
+                    </div>
+
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-1">Descrição / Observações</label>
                         <textarea 
