@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, User, MaterialOrder, OrderStatus, Material } from '../types';
-import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, ChevronRight, Package, Truck, ShoppingCart, Building } from 'lucide-react';
+import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, Package, ChevronRight, ArrowRight, Home, Ruler, PaintBucket, CheckSquare } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface ClientDashboardProps {
   currentUser: User;
@@ -14,13 +15,22 @@ interface ClientDashboardProps {
   companySettings?: { name?: string, logoUrl?: string, phone?: string } | null;
 }
 
+// Chart Colors
+const COLORS = ['#10b981', '#e2e8f0']; // Green (Paid), Slate (Remaining)
+
 export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, users, works, finance, logs, orders, materials, companySettings }) => {
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'FINANCE' | 'GALLERY' | 'MATERIALS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'FINANCE' | 'MATERIALS' | 'GALLERY'>('OVERVIEW');
 
   // SECURITY: Strictly filter work by Client ID
   const myWork = useMemo(() => {
     return works.find(w => w.clientId === currentUser.id);
   }, [works, currentUser.id]);
+
+  // Find Responsible Engineer
+  const responsibleEngineer = useMemo(() => {
+      if (!myWork || !myWork.responsibleId) return null;
+      return users.find(u => u.id === myWork.responsibleId);
+  }, [myWork, users]);
 
   // Filter related data based on the identified work
   const myFinance = useMemo(() => {
@@ -30,50 +40,67 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
 
   const myLogs = useMemo(() => {
     if (!myWork) return [];
-    return logs.filter(l => l.workId === myWork.id && l.images && l.images.length > 0);
+    // Get logs with images, sort desc by date
+    return logs
+        .filter(l => l.workId === myWork.id && l.images && l.images.length > 0)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [logs, myWork]);
 
   const myOrders = useMemo(() => {
       if (!myWork) return [];
-      // Filter only Purchased or Delivered items (Hide pending/quoting to avoid confusion)
       return orders.filter(o => 
           o.workId === myWork.id && 
           (o.status === OrderStatus.PURCHASED || o.status === OrderStatus.DELIVERED)
       ).sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
   }, [orders, myWork]);
 
-  // Find Responsible Engineer
-  const responsibleEngineer = useMemo(() => {
-      if (!myWork || !myWork.responsibleId) return null;
-      return users.find(u => u.id === myWork.responsibleId);
-  }, [myWork, users]);
+  // --- FINANCIAL CALCULATIONS ---
+  const financialStats = useMemo(() => {
+      if (!myWork) return { totalContract: 0, paid: 0, remaining: 0, percentPaid: 0 };
 
-  // Calculations
-  const totalInvested = useMemo(() => {
-    return myFinance
+      const paid = myFinance
         .filter(f => f.status === 'Pago')
         .reduce((acc, curr) => acc + curr.amount, 0);
-  }, [myFinance]);
+      
+      // Use the Work Budget as the Total Contract Value. 
+      // If budget is 0 (not set), fall back to sum of expenses + pending (estimate)
+      let totalContract = myWork.budget; 
+      
+      if (totalContract === 0) {
+          const pending = myFinance
+            .filter(f => f.status === 'Pendente')
+            .reduce((acc, curr) => acc + curr.amount, 0);
+          totalContract = paid + pending; 
+      }
 
-  const upcomingPayments = useMemo(() => {
-    return myFinance
-        .filter(f => f.status === 'Pendente')
-        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-  }, [myFinance]);
+      const remaining = Math.max(0, totalContract - paid);
+      const percentPaid = totalContract > 0 ? Math.round((paid / totalContract) * 100) : 0;
 
-  const galleryImages = useMemo(() => {
-      const images: { url: string; date: string; description: string }[] = [];
-      myLogs.forEach(log => {
-          log.images.forEach(img => {
-              images.push({
-                  url: img,
-                  date: log.date,
-                  description: log.content
-              });
-          });
+      return { totalContract, paid, remaining, percentPaid };
+  }, [myFinance, myWork]);
+
+  // --- TIMELINE LOGIC (Inferred from Progress) ---
+  const timelineStages = useMemo(() => {
+      if (!myWork) return [];
+      const p = myWork.progress;
+      
+      return [
+          { label: 'Projetos', icon: <Ruler size={18}/>, status: p >= 10 ? 'DONE' : 'CURRENT' },
+          { label: 'Fundação', icon: <ArrowRight size={18} className="rotate-90"/>, status: p >= 30 ? 'DONE' : (p >= 10 ? 'CURRENT' : 'WAITING') },
+          { label: 'Estrutura', icon: <Home size={18}/>, status: p >= 60 ? 'DONE' : (p >= 30 ? 'CURRENT' : 'WAITING') },
+          { label: 'Acabamento', icon: <PaintBucket size={18}/>, status: p >= 90 ? 'DONE' : (p >= 60 ? 'CURRENT' : 'WAITING') },
+          { label: 'Entrega', icon: <CheckSquare size={18}/>, status: p >= 100 ? 'DONE' : (p >= 90 ? 'CURRENT' : 'WAITING') },
+      ];
+  }, [myWork]);
+
+  const recentPhotos = useMemo(() => {
+      const photos: { url: string, date: string, label: string }[] = [];
+      myLogs.slice(0, 3).forEach(log => { // Take from top 3 logs
+          if (log.images[0]) {
+              photos.push({ url: log.images[0], date: log.date, label: log.content });
+          }
       });
-      // Sort newest first
-      return images.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return photos;
   }, [myLogs]);
 
   // Helper to get material category
@@ -82,246 +109,261 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
       return mat ? mat.category : '-';
   };
 
+  // CONTACT LINKS
+  const waNumber = responsibleEngineer?.phone ? responsibleEngineer.phone.replace(/\D/g, '') : '';
+  const waLink = waNumber ? `https://wa.me/55${waNumber}` : '#';
+  const officePhone = companySettings?.phone ? companySettings.phone.replace(/\D/g, '') : '';
+
   if (!myWork) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-slate-50 p-8 text-center">
-        <div className="w-20 h-20 bg-slate-200 rounded-full flex items-center justify-center mb-6">
-            <AlertCircle size={40} className="text-slate-400" />
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-8 text-center">
+        <div className="w-24 h-24 bg-white rounded-full shadow-xl flex items-center justify-center mb-6">
+            <AlertCircle size={40} className="text-slate-300" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">Nenhuma obra vinculada</h2>
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">Área do Cliente</h2>
         <p className="text-slate-500 max-w-md">
-          Não encontramos um projeto ativo associado ao seu perfil. Entre em contato com a administração da PMS Construtora.
+          Não encontramos um projeto ativo vinculado ao seu perfil. Por favor, entre em contato com a administração.
         </p>
       </div>
     );
   }
 
-  // Construct WhatsApp Link
-  const waNumber = responsibleEngineer?.phone ? responsibleEngineer.phone.replace(/\D/g, '') : '';
-  const waLink = waNumber ? `https://wa.me/55${waNumber}` : '#';
-  
-  // Company Office Phone Link
-  const officePhone = companySettings?.phone ? companySettings.phone.replace(/\D/g, '') : '';
-  const officeLink = officePhone ? `tel:${officePhone}` : '#';
-
   return (
-    <div className="pb-20 animate-fade-in">
-      {/* HERO HEADER */}
-      <div className="relative h-64 w-full rounded-2xl overflow-hidden shadow-lg mb-8 group">
-        <img 
-          src={myWork.imageUrl || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=2070&auto=format&fit=crop'} 
-          alt="Capa da Obra" 
-          className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-        
-        <div className="absolute bottom-0 left-0 w-full p-6 md:p-8 text-white">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                    <span className="bg-pms-500 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider mb-2 inline-block">
-                        {myWork.status}
-                    </span>
-                    <h1 className="text-3xl md:text-4xl font-bold mb-2">{myWork.name}</h1>
-                    <p className="text-white/80 flex items-center gap-2 text-sm">
-                        <MapPin size={16} /> {myWork.address}
-                    </p>
-                </div>
-                
-                <div className="md:text-right min-w-[200px]">
-                    <div className="flex justify-between text-xs font-bold uppercase mb-2 text-pms-300">
-                        <span>Progresso Físico</span>
-                        <span>{myWork.progress}%</span>
-                    </div>
-                    <div className="w-full h-2 bg-white/20 rounded-full overflow-hidden backdrop-blur-sm">
-                        <div 
-                            className="h-full bg-pms-500 shadow-[0_0_10px_rgba(197,157,69,0.5)]" 
-                            style={{ width: `${myWork.progress}%` }}
-                        ></div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div className="min-h-screen bg-slate-50 pb-24 font-sans">
+      
+      {/* 1. HERO SECTION */}
+      <div className="relative w-full h-[380px] md:h-[450px] bg-slate-900">
+          <div className="absolute inset-0">
+              <img 
+                src={myWork.imageUrl || 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=2531&auto=format&fit=crop'} 
+                alt="Capa" 
+                className="w-full h-full object-cover opacity-40"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-50 via-transparent to-transparent"></div>
+              <div className="absolute inset-0 bg-gradient-to-b from-black/60 to-transparent"></div>
+          </div>
+
+          <div className="absolute inset-0 flex flex-col justify-center px-6 md:px-12 max-w-7xl mx-auto">
+              <span className="bg-white/10 backdrop-blur-md border border-white/20 text-white w-fit px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
+                  Painel do Cliente
+              </span>
+              <h1 className="text-3xl md:text-5xl font-bold text-white mb-2 drop-shadow-lg">{myWork.name}</h1>
+              <p className="text-white/80 flex items-center gap-2 text-sm md:text-base mb-8">
+                  <MapPin size={18} className="text-pms-400"/> {myWork.address}
+              </p>
+
+              {/* Large Progress Bar */}
+              <div className="max-w-xl">
+                  <div className="flex justify-between text-white text-sm font-bold mb-2 uppercase tracking-wide">
+                      <span>Progresso Geral</span>
+                      <span className="text-pms-400">{myWork.progress}% Concluído</span>
+                  </div>
+                  <div className="w-full h-4 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm border border-white/10">
+                      <div 
+                          className="h-full bg-gradient-to-r from-pms-600 to-pms-400 shadow-[0_0_15px_rgba(197,157,69,0.6)] transition-all duration-1000 ease-out" 
+                          style={{ width: `${myWork.progress}%` }}
+                      />
+                  </div>
+              </div>
+          </div>
       </div>
 
-      {/* NAVIGATION TABS */}
-      <div className="flex border-b border-slate-200 mb-8 overflow-x-auto">
-          <button 
-            onClick={() => setActiveTab('OVERVIEW')}
-            className={`px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'OVERVIEW' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          >
-              <TrendingUp size={18} /> Visão Geral
-          </button>
-          <button 
-            onClick={() => setActiveTab('FINANCE')}
-            className={`px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'FINANCE' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          >
-              <DollarSign size={18} /> Financeiro
-          </button>
-          <button 
-            onClick={() => setActiveTab('MATERIALS')}
-            className={`px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'MATERIALS' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          >
-              <Package size={18} /> Materiais
-          </button>
-          <button 
-            onClick={() => setActiveTab('GALLERY')}
-            className={`px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'GALLERY' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-          >
-              <ImageIcon size={18} /> Galeria
-          </button>
+      {/* 2. FLOATING STATS CARDS */}
+      <div className="px-6 md:px-12 max-w-7xl mx-auto -mt-16 relative z-10">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white p-6 rounded-xl shadow-xl border border-slate-100 flex items-center gap-4 transform hover:-translate-y-1 transition-transform">
+                  <div className="p-3 bg-blue-50 text-blue-600 rounded-full"><Calendar size={24}/></div>
+                  <div>
+                      <p className="text-xs text-slate-400 uppercase font-bold">Início da Obra</p>
+                      <p className="text-lg font-bold text-slate-800">{myWork.startDate ? new Date(myWork.startDate).toLocaleDateString('pt-BR') : '-'}</p>
+                  </div>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-xl border border-slate-100 flex items-center gap-4 transform hover:-translate-y-1 transition-transform">
+                  <div className="p-3 bg-orange-50 text-orange-600 rounded-full"><Clock size={24}/></div>
+                  <div>
+                      <p className="text-xs text-slate-400 uppercase font-bold">Previsão de Entrega</p>
+                      <p className="text-lg font-bold text-slate-800">{myWork.endDate ? new Date(myWork.endDate).toLocaleDateString('pt-BR') : '-'}</p>
+                  </div>
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-xl border border-slate-100 flex items-center gap-4 transform hover:-translate-y-1 transition-transform">
+                  <div className="p-3 bg-green-50 text-green-600 rounded-full"><CheckCircle2 size={24}/></div>
+                  <div>
+                      <p className="text-xs text-slate-400 uppercase font-bold">Status Atual</p>
+                      <p className="text-lg font-bold text-slate-800">{myWork.status}</p>
+                  </div>
+              </div>
+          </div>
       </div>
 
-      {/* CONTENT AREA */}
-      <div className="space-y-6">
+      {/* MAIN CONTENT */}
+      <div className="px-6 md:px-12 max-w-7xl mx-auto mt-10">
           
-          {/* TAB: OVERVIEW */}
-          {activeTab === 'OVERVIEW' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                      <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                          <Calendar className="text-pms-600" size={20}/> Prazos e Datas
-                      </h3>
-                      <div className="space-y-4">
-                          <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                              <span className="text-sm text-slate-500">Data de Início</span>
-                              <span className="font-bold text-slate-800">
-                                  {myWork.startDate ? new Date(myWork.startDate).toLocaleDateString('pt-BR') : '-'}
-                              </span>
+          {/* TABS */}
+          <div className="flex justify-center md:justify-start gap-2 mb-8 overflow-x-auto pb-2">
+              <button onClick={() => setActiveTab('OVERVIEW')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'OVERVIEW' ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}>Visão Geral</button>
+              <button onClick={() => setActiveTab('FINANCE')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'FINANCE' ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}>Financeiro</button>
+              <button onClick={() => setActiveTab('MATERIALS')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'MATERIALS' ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}>Materiais</button>
+              <button onClick={() => setActiveTab('GALLERY')} className={`px-6 py-2 rounded-full text-sm font-bold transition-all whitespace-nowrap ${activeTab === 'GALLERY' ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-500 hover:bg-slate-100'}`}>Galeria</button>
+          </div>
+
+          {/* TAB CONTENT */}
+          <div className="animate-fade-in space-y-8">
+              
+              {activeTab === 'OVERVIEW' && (
+                  <>
+                    {/* 3. VISUAL TIMELINE */}
+                    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 className="text-xl font-bold text-slate-800 mb-8">Etapas da Construção</h3>
+                        <div className="relative">
+                            {/* Line */}
+                            <div className="absolute top-5 left-0 w-full h-1 bg-slate-100 rounded-full -z-0"></div>
+                            
+                            <div className="flex justify-between relative z-10">
+                                {timelineStages.map((stage, idx) => (
+                                    <div key={idx} className="flex flex-col items-center text-center group">
+                                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center border-4 transition-all duration-500 ${
+                                            stage.status === 'DONE' ? 'bg-green-500 border-green-100 text-white shadow-green-200 shadow-lg' :
+                                            stage.status === 'CURRENT' ? 'bg-blue-600 border-blue-100 text-white shadow-blue-200 shadow-lg scale-110' :
+                                            'bg-white border-slate-200 text-slate-300'
+                                        }`}>
+                                            {stage.icon}
+                                        </div>
+                                        <p className={`mt-4 text-xs md:text-sm font-bold ${stage.status === 'WAITING' ? 'text-slate-400' : 'text-slate-700'}`}>
+                                            {stage.label}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 4. ACTIVITY FEED (LATEST PHOTOS) */}
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 mb-4">Aconteceu na Obra</h3>
+                        {recentPhotos.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {recentPhotos.map((photo, idx) => (
+                                    <div key={idx} className="group relative h-64 rounded-2xl overflow-hidden shadow-sm cursor-pointer">
+                                        <img src={photo.url} alt="Feed" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"/>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-90"></div>
+                                        <div className="absolute bottom-0 left-0 p-4 text-white">
+                                            <span className="text-[10px] font-bold bg-white/20 backdrop-blur px-2 py-1 rounded mb-2 inline-block">
+                                                {new Date(photo.date).toLocaleDateString('pt-BR')}
+                                            </span>
+                                            <p className="text-sm font-medium line-clamp-2">{photo.label}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="bg-white p-8 rounded-2xl border border-slate-200 border-dashed text-center text-slate-400">
+                                <ImageIcon size={40} className="mx-auto mb-2 opacity-20"/>
+                                <p>Nenhuma atualização fotográfica recente.</p>
+                            </div>
+                        )}
+                    </div>
+                  </>
+              )}
+
+              {activeTab === 'FINANCE' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                      {/* MACRO CHART */}
+                      <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center justify-center h-[400px]">
+                          <h3 className="text-lg font-bold text-slate-800 mb-2 w-full text-left">Resumo Financeiro</h3>
+                          <div className="w-full h-64 relative">
+                              <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart>
+                                      <Pie
+                                          data={[
+                                              { name: 'Pago', value: financialStats.paid },
+                                              { name: 'Restante', value: financialStats.remaining }
+                                          ]}
+                                          cx="50%"
+                                          cy="50%"
+                                          innerRadius={60}
+                                          outerRadius={80}
+                                          paddingAngle={5}
+                                          dataKey="value"
+                                          stroke="none"
+                                      >
+                                          <Cell fill={COLORS[0]} />
+                                          <Cell fill={COLORS[1]} />
+                                      </Pie>
+                                      <Tooltip formatter={(val: number) => `R$ ${val.toLocaleString()}`} />
+                                  </PieChart>
+                              </ResponsiveContainer>
+                              {/* Center Text */}
+                              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                  <span className="text-3xl font-bold text-slate-800">{financialStats.percentPaid}%</span>
+                                  <span className="text-xs text-slate-400 uppercase font-bold">Quitado</span>
+                              </div>
                           </div>
-                          <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                              <span className="text-sm text-slate-500">Previsão de Entrega</span>
-                              <span className="font-bold text-slate-800">
-                                  {myWork.endDate ? new Date(myWork.endDate).toLocaleDateString('pt-BR') : '-'}
-                              </span>
-                          </div>
-                      </div>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col justify-center items-center text-center">
-                      <div className="w-16 h-16 bg-pms-100 text-pms-600 rounded-full flex items-center justify-center mb-4">
-                          <Phone size={32} />
-                      </div>
-                      <h3 className="font-bold text-slate-800 mb-2">Canais de Atendimento</h3>
-                      <p className="text-sm text-slate-500 mb-4">Fale com o engenheiro ou com nosso escritório.</p>
-                      
-                      <div className="w-full space-y-3">
-                          {responsibleEngineer && waNumber ? (
-                              <a 
-                                href={waLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="w-full bg-green-600 hover:bg-green-500 text-white px-4 py-3 rounded-xl font-bold shadow-lg shadow-green-600/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
-                              >
-                                  <Phone size={18} /> WhatsApp do Engenheiro
-                              </a>
-                          ) : null}
-
-                          {officePhone ? (
-                              <a 
-                                href={officeLink}
-                                className="w-full bg-slate-800 hover:bg-slate-700 text-white px-4 py-3 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02]"
-                              >
-                                  <Building size={18} /> Ligar para Escritório
-                              </a>
-                          ) : null}
-
-                          {!waNumber && !officePhone && (
-                              <button disabled className="w-full bg-slate-100 text-slate-400 px-4 py-3 rounded-xl font-bold cursor-not-allowed">
-                                  Contatos Indisponíveis
-                              </button>
-                          )}
-                      </div>
-                  </div>
-              </div>
-          )}
-
-          {/* TAB: FINANCE */}
-          {activeTab === 'FINANCE' && (
-              <div className="animate-fade-in space-y-6">
-                  {/* Investment Card */}
-                  <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
-                      <p className="text-pms-300 text-sm font-bold uppercase tracking-wider mb-2">Total Investido (Pago)</p>
-                      <h2 className="text-4xl md:text-5xl font-bold mb-1">
-                          R$ {totalInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                      </h2>
-                      <p className="text-slate-400 text-sm">Valores atualizados conforme notas fiscais e recibos.</p>
-                  </div>
-
-                  {/* Pending Payments Table */}
-                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                      <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                              <Clock className="text-orange-500" size={20} /> Próximos Pagamentos Previstos
-                          </h3>
-                      </div>
-                      <div className="overflow-x-auto">
-                          <table className="w-full text-left text-sm">
-                              <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
-                                  <tr>
-                                      <th className="px-6 py-4">Vencimento</th>
-                                      <th className="px-6 py-4">Descrição</th>
-                                      <th className="px-6 py-4">Categoria</th>
-                                      <th className="px-6 py-4 text-right">Valor</th>
-                                  </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                  {upcomingPayments.map(item => (
-                                      <tr key={item.id} className="hover:bg-slate-50">
-                                          <td className="px-6 py-4 font-medium text-slate-700">
-                                              {new Date(item.dueDate).toLocaleDateString('pt-BR')}
-                                          </td>
-                                          <td className="px-6 py-4 text-slate-600">{item.description}</td>
-                                          <td className="px-6 py-4">
-                                              <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs border border-slate-200">
-                                                  {item.category}
-                                              </span>
-                                          </td>
-                                          <td className="px-6 py-4 text-right font-bold text-slate-800">
-                                              R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                          </td>
-                                      </tr>
-                                  ))}
-                                  {upcomingPayments.length === 0 && (
-                                      <tr>
-                                          <td colSpan={4} className="p-8 text-center text-slate-400">
-                                              <CheckCircle2 size={32} className="mx-auto mb-2 text-green-500 opacity-50" />
-                                              Tudo em dia! Nenhum pagamento pendente.
-                                          </td>
-                                      </tr>
-                                  )}
-                              </tbody>
-                          </table>
-                      </div>
-                  </div>
-              </div>
-          )}
-
-          {/* TAB: MATERIALS */}
-          {activeTab === 'MATERIALS' && (
-              <div className="animate-fade-in space-y-6">
-                  {/* Summary Card */}
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                      <div className="flex items-center gap-4">
-                          <div className="p-3 bg-blue-100 rounded-full text-blue-600">
-                              <Truck size={24} />
-                          </div>
-                          <div>
-                              <p className="text-sm text-slate-500 uppercase font-bold">Itens Adquiridos/Entregues</p>
-                              <h3 className="text-3xl font-bold text-slate-800">{myOrders.length}</h3>
+                          <div className="flex justify-center gap-6 w-full mt-4">
+                              <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                                  <span className="text-sm font-medium text-slate-600">Pago</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 rounded-full bg-slate-200"></div>
+                                  <span className="text-sm font-medium text-slate-600">A Pagar</span>
+                              </div>
                           </div>
                       </div>
-                      <div className="text-right text-sm text-slate-500 max-w-xs">
-                          Este painel mostra os insumos que já foram comprados ou estão no canteiro de obras.
+
+                      {/* NUMBERS & LIST */}
+                      <div className="lg:col-span-2 space-y-6">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="bg-slate-800 text-white p-6 rounded-2xl shadow-lg">
+                                  <p className="text-slate-400 text-xs font-bold uppercase mb-1">Valor Total Contrato (Est.)</p>
+                                  <p className="text-2xl font-bold">R$ {financialStats.totalContract.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                              </div>
+                              <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+                                  <p className="text-slate-400 text-xs font-bold uppercase mb-1">Total Pago</p>
+                                  <p className="text-2xl font-bold text-emerald-600">R$ {financialStats.paid.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                              </div>
+                          </div>
+
+                          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                              <div className="p-6 border-b border-slate-100">
+                                  <h3 className="font-bold text-slate-800">Próximos Pagamentos (Previsão)</h3>
+                              </div>
+                              <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-sm">
+                                      <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
+                                          <tr>
+                                              <th className="px-6 py-4">Vencimento</th>
+                                              <th className="px-6 py-4">Descrição</th>
+                                              <th className="px-6 py-4 text-right">Valor</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                          {myFinance
+                                              .filter(f => f.status === 'Pendente')
+                                              .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+                                              .slice(0, 5) // Show only top 5
+                                              .map(item => (
+                                              <tr key={item.id} className="hover:bg-slate-50">
+                                                  <td className="px-6 py-4 text-slate-600">{new Date(item.dueDate).toLocaleDateString('pt-BR')}</td>
+                                                  <td className="px-6 py-4 font-medium text-slate-800">{item.description}</td>
+                                                  <td className="px-6 py-4 text-right font-bold text-slate-800">R$ {item.amount.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                              </tr>
+                                          ))}
+                                          {myFinance.filter(f => f.status === 'Pendente').length === 0 && (
+                                              <tr><td colSpan={3} className="p-8 text-center text-slate-400">Nenhum pagamento pendente.</td></tr>
+                                          )}
+                                      </tbody>
+                                  </table>
+                              </div>
+                          </div>
                       </div>
                   </div>
+              )}
 
-                  {/* Materials Table */}
-                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                      <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                              <Package className="text-pms-600" size={20} /> Registro de Materiais
-                          </h3>
+              {activeTab === 'MATERIALS' && (
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                      <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                          <h3 className="font-bold text-slate-800">Materiais no Canteiro</h3>
+                          <span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded text-slate-600">{myOrders.length} Itens</span>
                       </div>
                       <div className="overflow-x-auto">
                           <table className="w-full text-left text-sm">
@@ -330,93 +372,71 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
                                       <th className="px-6 py-4">Data</th>
                                       <th className="px-6 py-4">Material</th>
                                       <th className="px-6 py-4 text-center">Qtd.</th>
-                                      <th className="px-6 py-4">Categoria</th>
                                       <th className="px-6 py-4 text-right">Status</th>
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                  {myOrders.map(order => {
-                                      const date = order.status === OrderStatus.DELIVERED 
-                                          ? (order.deliveryDate || order.purchaseDate || order.requestDate) 
-                                          : (order.purchaseDate || order.requestDate);
-                                          
-                                      return (
-                                          <tr key={order.id} className="hover:bg-slate-50">
-                                              <td className="px-6 py-4 text-slate-600">
-                                                  {new Date(date).toLocaleDateString('pt-BR')}
-                                              </td>
-                                              <td className="px-6 py-4 font-medium text-slate-800">
-                                                  {order.itemName}
-                                              </td>
-                                              <td className="px-6 py-4 text-center">
-                                                  <span className="font-bold text-slate-700">{order.quantity}</span> 
-                                                  <span className="text-xs text-slate-500 ml-1">{order.unit}</span>
-                                              </td>
-                                              <td className="px-6 py-4">
-                                                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">
-                                                      {getMaterialCategory(order.itemName)}
+                                  {myOrders.map(order => (
+                                      <tr key={order.id} className="hover:bg-slate-50">
+                                          <td className="px-6 py-4 text-slate-500">{new Date(order.requestDate).toLocaleDateString('pt-BR')}</td>
+                                          <td className="px-6 py-4 font-medium text-slate-800">
+                                              {order.itemName}
+                                              <span className="block text-xs text-slate-400 font-normal">{getMaterialCategory(order.itemName)}</span>
+                                          </td>
+                                          <td className="px-6 py-4 text-center text-slate-700">
+                                              <strong>{order.quantity}</strong> {order.unit}
+                                          </td>
+                                          <td className="px-6 py-4 text-right">
+                                              {order.status === OrderStatus.DELIVERED ? (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-green-100 text-green-700 uppercase">
+                                                      Entregue
                                                   </span>
-                                              </td>
-                                              <td className="px-6 py-4 text-right">
-                                                  {order.status === OrderStatus.DELIVERED ? (
-                                                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
-                                                          <CheckCircle2 size={12} /> Entregue
-                                                      </span>
-                                                  ) : (
-                                                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
-                                                          <ShoppingCart size={12} /> Comprado
-                                                      </span>
-                                                  )}
-                                              </td>
-                                          </tr>
-                                      );
-                                  })}
-                                  {myOrders.length === 0 && (
-                                      <tr>
-                                          <td colSpan={5} className="p-8 text-center text-slate-400">
-                                              Nenhum registro de material encontrado.
+                                              ) : (
+                                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 uppercase">
+                                                      Comprado
+                                                  </span>
+                                              )}
                                           </td>
                                       </tr>
-                                  )}
+                                  ))}
                               </tbody>
                           </table>
                       </div>
                   </div>
-              </div>
-          )}
+              )}
 
-          {/* TAB: GALLERY */}
-          {activeTab === 'GALLERY' && (
-              <div className="animate-fade-in">
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {galleryImages.map((img, idx) => (
-                          <div key={idx} className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm">
-                              <img 
-                                src={img.url} 
-                                alt={`Registro de ${img.date}`} 
-                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                loading="lazy"
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
-                                  <p className="text-white text-xs font-bold mb-1">
-                                      {new Date(img.date).toLocaleDateString('pt-BR')}
-                                  </p>
-                                  <p className="text-white/80 text-[10px] line-clamp-2">
-                                      {img.description}
-                                  </p>
+              {activeTab === 'GALLERY' && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {myLogs.flatMap(l => l.images.map(img => ({url: img, date: l.date, desc: l.content}))).map((photo, idx) => (
+                          <div key={idx} className="group relative aspect-square rounded-xl overflow-hidden bg-slate-200 cursor-pointer">
+                              <img src={photo.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy"/>
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4 text-white">
+                                  <span className="text-xs font-bold">{new Date(photo.date).toLocaleDateString('pt-BR')}</span>
+                                  <p className="text-[10px] line-clamp-2 opacity-80">{photo.desc}</p>
                               </div>
                           </div>
                       ))}
+                      {myLogs.length === 0 && <div className="col-span-full text-center p-10 text-slate-400">Galeria vazia.</div>}
                   </div>
-                  {galleryImages.length === 0 && (
-                      <div className="p-10 text-center bg-white rounded-xl border border-slate-200 border-dashed">
-                          <ImageIcon size={48} className="mx-auto mb-2 text-slate-300" />
-                          <p className="text-slate-500">Nenhuma foto registrada no diário de obras ainda.</p>
-                      </div>
-                  )}
-              </div>
-          )}
+              )}
+          </div>
       </div>
+
+      {/* 5. FLOATING ACTION BUTTON (WHATSAPP) */}
+      {responsibleEngineer && waNumber && (
+          <a 
+            href={waLink} 
+            target="_blank" 
+            rel="noreferrer"
+            className="fixed bottom-6 right-6 z-50 bg-green-500 hover:bg-green-600 text-white p-4 rounded-full shadow-2xl hover:shadow-green-500/30 transition-all transform hover:scale-110 flex items-center gap-2 group"
+            title="Falar com Engenheiro"
+          >
+              <Phone size={24} fill="white" />
+              <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 ease-in-out whitespace-nowrap font-bold text-sm">
+                  Falar com Engenheiro
+              </span>
+          </a>
+      )}
     </div>
   );
 };

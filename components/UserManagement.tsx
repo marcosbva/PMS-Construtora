@@ -6,7 +6,6 @@ import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSe
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
 
-// Missing Component Definition
 interface TabButtonProps {
     active: boolean;
     onClick: () => void;
@@ -39,7 +38,7 @@ interface UserManagementProps {
   users: User[];
   materials: Material[];
   orders?: MaterialOrder[];
-  logs?: DailyLog[]; // ADDED PROP
+  logs?: DailyLog[]; 
   initialTab?: 'INTERNAL' | 'CLIENTS' | 'SUPPLIERS' | 'SETTINGS' | 'MATERIALS' | 'FINANCE_CATEGORIES' | 'PERMISSIONS';
   taskStatuses: TaskStatusDefinition[];
   financeCategories?: FinanceCategoryDefinition[];
