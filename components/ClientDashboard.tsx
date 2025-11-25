@@ -1,8 +1,7 @@
 
-
 import React, { useState, useMemo } from 'react';
-import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, User } from '../types';
-import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, ChevronRight, Download } from 'lucide-react';
+import { ConstructionWork, FinancialRecord, DailyLog, FinanceType, User, MaterialOrder, OrderStatus, Material } from '../types';
+import { MapPin, Calendar, TrendingUp, Image as ImageIcon, CheckCircle2, DollarSign, Clock, Phone, AlertCircle, ChevronRight, Package, Truck, ShoppingCart } from 'lucide-react';
 
 interface ClientDashboardProps {
   currentUser: User;
@@ -10,10 +9,12 @@ interface ClientDashboardProps {
   works: ConstructionWork[];
   finance: FinancialRecord[];
   logs: DailyLog[];
+  orders: MaterialOrder[];
+  materials: Material[];
 }
 
-export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, users, works, finance, logs }) => {
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'FINANCE' | 'GALLERY'>('OVERVIEW');
+export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, users, works, finance, logs, orders, materials }) => {
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'FINANCE' | 'GALLERY' | 'MATERIALS'>('OVERVIEW');
 
   // SECURITY: Strictly filter work by Client ID
   const myWork = useMemo(() => {
@@ -30,6 +31,15 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
     if (!myWork) return [];
     return logs.filter(l => l.workId === myWork.id && l.images && l.images.length > 0);
   }, [logs, myWork]);
+
+  const myOrders = useMemo(() => {
+      if (!myWork) return [];
+      // Filter only Purchased or Delivered items (Hide pending/quoting to avoid confusion)
+      return orders.filter(o => 
+          o.workId === myWork.id && 
+          (o.status === OrderStatus.PURCHASED || o.status === OrderStatus.DELIVERED)
+      ).sort((a, b) => new Date(b.requestDate).getTime() - new Date(a.requestDate).getTime());
+  }, [orders, myWork]);
 
   // Find Responsible Engineer
   const responsibleEngineer = useMemo(() => {
@@ -64,6 +74,12 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
       // Sort newest first
       return images.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [myLogs]);
+
+  // Helper to get material category
+  const getMaterialCategory = (itemName: string) => {
+      const mat = materials.find(m => m.name === itemName);
+      return mat ? mat.category : '-';
+  };
 
   if (!myWork) {
     return (
@@ -137,10 +153,16 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
               <DollarSign size={18} /> Financeiro
           </button>
           <button 
+            onClick={() => setActiveTab('MATERIALS')}
+            className={`px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'MATERIALS' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+              <Package size={18} /> Materiais
+          </button>
+          <button 
             onClick={() => setActiveTab('GALLERY')}
             className={`px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'GALLERY' ? 'border-pms-600 text-pms-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
           >
-              <ImageIcon size={18} /> Galeria de Fotos
+              <ImageIcon size={18} /> Galeria
           </button>
       </div>
 
@@ -252,6 +274,94 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({ currentUser, u
                                           <td colSpan={4} className="p-8 text-center text-slate-400">
                                               <CheckCircle2 size={32} className="mx-auto mb-2 text-green-500 opacity-50" />
                                               Tudo em dia! Nenhum pagamento pendente.
+                                          </td>
+                                      </tr>
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {/* TAB: MATERIALS */}
+          {activeTab === 'MATERIALS' && (
+              <div className="animate-fade-in space-y-6">
+                  {/* Summary Card */}
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                      <div className="flex items-center gap-4">
+                          <div className="p-3 bg-blue-100 rounded-full text-blue-600">
+                              <Truck size={24} />
+                          </div>
+                          <div>
+                              <p className="text-sm text-slate-500 uppercase font-bold">Itens Adquiridos/Entregues</p>
+                              <h3 className="text-3xl font-bold text-slate-800">{myOrders.length}</h3>
+                          </div>
+                      </div>
+                      <div className="text-right text-sm text-slate-500 max-w-xs">
+                          Este painel mostra os insumos que já foram comprados ou estão no canteiro de obras.
+                      </div>
+                  </div>
+
+                  {/* Materials Table */}
+                  <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                      <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                              <Package className="text-pms-600" size={20} /> Registro de Materiais
+                          </h3>
+                      </div>
+                      <div className="overflow-x-auto">
+                          <table className="w-full text-left text-sm">
+                              <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
+                                  <tr>
+                                      <th className="px-6 py-4">Data</th>
+                                      <th className="px-6 py-4">Material</th>
+                                      <th className="px-6 py-4 text-center">Qtd.</th>
+                                      <th className="px-6 py-4">Categoria</th>
+                                      <th className="px-6 py-4 text-right">Status</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                  {myOrders.map(order => {
+                                      const date = order.status === OrderStatus.DELIVERED 
+                                          ? (order.deliveryDate || order.purchaseDate || order.requestDate) 
+                                          : (order.purchaseDate || order.requestDate);
+                                          
+                                      return (
+                                          <tr key={order.id} className="hover:bg-slate-50">
+                                              <td className="px-6 py-4 text-slate-600">
+                                                  {new Date(date).toLocaleDateString('pt-BR')}
+                                              </td>
+                                              <td className="px-6 py-4 font-medium text-slate-800">
+                                                  {order.itemName}
+                                              </td>
+                                              <td className="px-6 py-4 text-center">
+                                                  <span className="font-bold text-slate-700">{order.quantity}</span> 
+                                                  <span className="text-xs text-slate-500 ml-1">{order.unit}</span>
+                                              </td>
+                                              <td className="px-6 py-4">
+                                                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">
+                                                      {getMaterialCategory(order.itemName)}
+                                                  </span>
+                                              </td>
+                                              <td className="px-6 py-4 text-right">
+                                                  {order.status === OrderStatus.DELIVERED ? (
+                                                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
+                                                          <CheckCircle2 size={12} /> Entregue
+                                                      </span>
+                                                  ) : (
+                                                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                                                          <ShoppingCart size={12} /> Comprado
+                                                      </span>
+                                                  )}
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                                  {myOrders.length === 0 && (
+                                      <tr>
+                                          <td colSpan={5} className="p-8 text-center text-slate-400">
+                                              Nenhum registro de material encontrado.
                                           </td>
                                       </tr>
                                   )}

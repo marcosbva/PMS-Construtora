@@ -114,6 +114,7 @@ export interface ConstructionWork {
   description: string;
   teamIds?: string[];
   driveLink?: string; // Link para Google Drive / Projetos
+  contractUrl?: string; // Link para o Contrato (PDF/Imagem)
 }
 
 export enum TaskStatus {

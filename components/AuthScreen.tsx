@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { User, UserRole, UserCategory } from '../types';
 import { HardHat, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, ShieldCheck, Cloud, Database, Loader2, Clock, LogOut, Key } from 'lucide-react';
@@ -11,9 +10,10 @@ interface AuthScreenProps {
   users: User[];
   onLogin: (user: User) => void;
   onRegister: (user: User) => Promise<void>;
+  companySettings?: { name?: string, logoUrl?: string } | null;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onLogin, onRegister }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onLogin, onRegister, companySettings }) => {
   const [isRegistering, setIsRegistering] = useState(false);
   const isOnline = api.isOnline();
   const auth = getAuthInstance();
@@ -305,11 +305,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ users: initialUsers, onL
             <div className="p-8 pt-6">
                 <div className="flex flex-col items-center mb-8">
                     <img 
-                        src="https://i.imgur.com/Qe2e0lQ.jpg" 
-                        alt="PMS Construtora" 
+                        src={companySettings?.logoUrl || "https://i.imgur.com/Qe2e0lQ.jpg"} 
+                        alt={companySettings?.name || "PMS Construtora"} 
                         className="w-24 h-24 rounded-xl mb-4 shadow-lg shadow-pms-600/30 object-contain bg-black"
                     />
-                    <h1 className="text-2xl font-bold text-slate-800">PMS Construtora</h1>
+                    <h1 className="text-2xl font-bold text-slate-800 text-center">{companySettings?.name || "PMS Construtora"}</h1>
                     <p className="text-slate-500 text-sm">Sistema de Gestão Integrada</p>
                 </div>
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ConstructionWork, WorkStatus, User, UserCategory, WorkBudget, DailyLog } from '../types';
-import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat } from 'lucide-react';
+import { Camera, Save, MapPin, Calendar, DollarSign, User as UserIcon, Loader2, Briefcase, FileText, Image as ImageIcon, Trash2, AlertTriangle, Calculator, FolderOpen, Link as LinkIcon, ExternalLink, HardHat, Upload, Eye } from 'lucide-react';
 import { api } from '../services/api';
 import { WorkforceSummary } from './WorkforceSummary';
 
@@ -20,6 +20,7 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
   const [isDirty, setIsDirty] = useState(false);
   const [budgetData, setBudgetData] = useState<WorkBudget | null>(null);
   const [isLoadingBudget, setIsLoadingBudget] = useState(true);
+  const [isUploadingContract, setIsUploadingContract] = useState(false);
 
   // Sync state if prop changes (e.g. background update)
   useEffect(() => {
@@ -66,6 +67,27 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleContractUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsUploadingContract(true);
+      try {
+          // Path: contracts/{workId}/filename
+          // Use timestamp to avoid collisions and cache issues
+          const path = `contracts/${work.id}/${Date.now()}_${file.name}`;
+          const url = await api.uploadImage(file, path);
+          
+          handleChange('contractUrl', url);
+          alert("Contrato enviado com sucesso! Lembre-se de salvar as alterações.");
+      } catch (err: any) {
+          console.error("Upload error:", err);
+          alert("Erro ao enviar arquivo: " + err.message);
+      } finally {
+          setIsUploadingContract(false);
+      }
   };
 
   const handleSave = async () => {
@@ -250,17 +272,82 @@ export const WorkOverview: React.FC<WorkOverviewProps> = ({ work, users, logs, o
                     </div>
                 </div>
 
-                <div className="mt-4">
-                    <label className="block text-xs font-bold text-slate-500 mb-1 uppercase flex items-center gap-1">
-                        <LinkIcon size={14} /> Link de Projetos (Google Drive / Dropbox)
-                    </label>
-                    <input 
-                        type="url"
-                        className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-pms-500 outline-none text-blue-600 underline"
-                        value={formData.driveLink || ''}
-                        onChange={(e) => handleChange('driveLink', e.target.value)}
-                        placeholder="Cole aqui o link da pasta de projetos..."
-                    />
+                {/* DOCUMENTATION LINKS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    {/* Drive Link */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase flex items-center gap-1">
+                            <LinkIcon size={14} /> Link de Projetos (Drive)
+                        </label>
+                        <input 
+                            type="url"
+                            className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-pms-500 outline-none text-blue-600 underline"
+                            value={formData.driveLink || ''}
+                            onChange={(e) => handleChange('driveLink', e.target.value)}
+                            placeholder="Cole aqui o link da pasta..."
+                        />
+                    </div>
+
+                    {/* Signed Contract Upload */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase flex items-center gap-1">
+                            <FileText size={14} /> Contrato Assinado
+                        </label>
+                        
+                        {formData.contractUrl ? (
+                            <div className="flex items-center justify-between bg-slate-50 border border-slate-300 rounded-lg p-2">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                    <div className="bg-red-100 text-red-600 p-1.5 rounded">
+                                        <FileText size={16} />
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-700 truncate">Contrato Anexado</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <a 
+                                        href={formData.contractUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                                        title="Visualizar Contrato"
+                                    >
+                                        <Eye size={16} />
+                                    </a>
+                                    <button 
+                                        onClick={() => {
+                                            if(window.confirm("Deseja remover o contrato anexado?")) {
+                                                handleChange('contractUrl', '');
+                                            }
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                        title="Excluir / Trocar"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <label className={`flex items-center justify-center gap-2 w-full border-2 border-dashed border-slate-300 rounded-lg p-2.5 cursor-pointer hover:bg-slate-50 hover:border-pms-400 transition-all ${isUploadingContract ? 'opacity-50 pointer-events-none' : ''}`}>
+                                {isUploadingContract ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin text-pms-600" />
+                                        <span className="text-xs font-bold text-pms-600">Enviando...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Upload size={16} className="text-slate-400" />
+                                        <span className="text-xs font-bold text-slate-500">Anexar Contrato (PDF)</span>
+                                    </>
+                                )}
+                                <input 
+                                    type="file" 
+                                    accept="application/pdf,image/*" 
+                                    className="hidden" 
+                                    onChange={handleContractUpload}
+                                    disabled={isUploadingContract}
+                                />
+                            </label>
+                        )}
+                    </div>
                 </div>
 
                 <div className="mt-4">

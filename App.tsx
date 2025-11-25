@@ -37,6 +37,7 @@ function App() {
   const [rentals, setRentals] = useState<RentalItem[]>([]); // New State for Rentals
   const [financeCategories, setFinanceCategories] = useState<FinanceCategoryDefinition[]>(DEFAULT_FINANCE_CATEGORIES);
   const [permissions, setPermissions] = useState<RolePermissionsMap>(DEFAULT_ROLE_PERMISSIONS);
+  const [companySettings, setCompanySettings] = useState<{name?: string, logoUrl?: string} | null>(null);
 
   // Navigation State
   const [currentView, setCurrentView] = useState('DASHBOARD');
@@ -86,6 +87,9 @@ function App() {
       });
       const unsubInventory = api.subscribeToInventory(setInventory);
       const unsubRentals = api.subscribeToRentals(setRentals);
+      
+      // Subscribe to Company Settings
+      const unsubSettings = api.subscribeToCompanySettings(setCompanySettings);
 
       // Fetch global logs for global dashboard
       const unsubAllLogs = api.subscribeToAllLogs(setLogs);
@@ -94,7 +98,7 @@ function App() {
 
       return () => {
           unsubUsers(); unsubWorks(); unsubTasks(); unsubFinance(); 
-          unsubMaterials(); unsubOrders(); unsubCats(); unsubAllLogs(); unsubInventory(); unsubRentals();
+          unsubMaterials(); unsubOrders(); unsubCats(); unsubAllLogs(); unsubInventory(); unsubRentals(); unsubSettings();
       };
   }, []);
 
@@ -189,7 +193,7 @@ function App() {
   };
 
   if (!currentUser) {
-      return <AuthScreen users={users} onLogin={handleLogin} onRegister={handleRegister} />;
+      return <AuthScreen users={users} onLogin={handleLogin} onRegister={handleRegister} companySettings={companySettings} />;
   }
 
   // --- CLIENT PORTAL MODE ---
@@ -202,13 +206,15 @@ function App() {
                       <div className="flex items-center gap-3">
                           <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden bg-black border border-slate-700">
                               <img 
-                                src="https://i.imgur.com/Qe2e0lQ.jpg" 
-                                alt="PMS Construtora" 
+                                src={companySettings?.logoUrl || "https://i.imgur.com/Qe2e0lQ.jpg"} 
+                                alt={companySettings?.name || "PMS Construtora"} 
                                 className="w-full h-full object-contain"
                               />
                           </div>
                           <div>
-                              <h1 className="font-bold text-lg leading-tight text-pms-400">PMS</h1>
+                              <h1 className="font-bold text-lg leading-tight text-pms-400 break-words">
+                                  {companySettings?.name?.split(' ')[0] || 'PMS'}
+                              </h1>
                               <p className="text-xs text-slate-400 font-medium">Área do Cliente</p>
                           </div>
                       </div>
@@ -234,7 +240,7 @@ function App() {
               <main className="flex-1 flex flex-col h-full overflow-hidden relative">
                   <header className="md:hidden bg-slate-900 text-white p-4 flex justify-between items-center shadow-md z-30">
                       <div className="flex items-center gap-2">
-                          <img src="https://i.imgur.com/Qe2e0lQ.jpg" alt="Logo" className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" />
+                          <img src={companySettings?.logoUrl || "https://i.imgur.com/Qe2e0lQ.jpg"} alt="Logo" className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" />
                           <span className="font-bold text-pms-400">Área do Cliente</span>
                       </div>
                       <button onClick={handleLogout}><LogOut size={20}/></button>
@@ -247,6 +253,8 @@ function App() {
                           works={works}
                           finance={finance}
                           logs={logs}
+                          orders={orders}
+                          materials={materials}
                       />
                   </div>
               </main>
@@ -279,14 +287,16 @@ function App() {
               <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden bg-black border border-slate-700 shrink-0">
                       <img 
-                        src="https://i.imgur.com/Qe2e0lQ.jpg" 
-                        alt="PMS Construtora" 
+                        src={companySettings?.logoUrl || "https://i.imgur.com/Qe2e0lQ.jpg"} 
+                        alt={companySettings?.name || "PMS Construtora"} 
                         className="w-full h-full object-contain"
                       />
                   </div>
                   <div>
-                      <h1 className="font-bold text-lg leading-tight text-pms-400">PMS</h1>
-                      <p className="text-xs text-slate-400 font-medium">Construtora</p>
+                      <h1 className="font-bold text-sm leading-tight text-pms-400 break-words max-w-[120px]">
+                          {companySettings?.name || "PMS Construtora"}
+                      </h1>
+                      <p className="text-[10px] text-slate-400 font-medium">Sistema de Gestão</p>
                   </div>
               </div>
               {/* Close Button (Mobile Only) */}
@@ -345,10 +355,14 @@ function App() {
                       <Menu size={24} />
                   </button>
                   <div className="flex items-center gap-2">
-                      <span className="font-bold text-pms-400 text-lg">PMS Construtora</span>
+                      <span className="font-bold text-pms-400 text-lg">{companySettings?.name || "PMS Construtora"}</span>
                   </div>
               </div>
-              <img src="https://i.imgur.com/Qe2e0lQ.jpg" alt="Logo" className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" />
+              <img 
+                src={companySettings?.logoUrl || "https://i.imgur.com/Qe2e0lQ.jpg"} 
+                alt="Logo" 
+                className="w-8 h-8 rounded border border-slate-700 object-contain bg-black" 
+              />
           </header>
 
           <div className="flex-1 overflow-auto p-4 md:p-8 w-full">

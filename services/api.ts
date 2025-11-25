@@ -69,6 +69,19 @@ export const api = {
       return null;
   },
   
+  subscribeToCompanySettings: (callback: (settings: any) => void) => {
+      const db = getDb();
+      if (!db) return () => {};
+      const docRef = doc(db, COLLECTIONS.SETTINGS, 'company_info');
+      return onSnapshot(docRef, (snap) => {
+          if (snap.exists()) {
+              callback(snap.data());
+          } else {
+              callback(null);
+          }
+      });
+  },
+  
   updateCompanySettings: async (settings: { name?: string; logoUrl?: string; primaryColor?: string }) => {
       const db = getDb();
       if (!db) return;
