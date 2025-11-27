@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo } from 'react';
-import { DailyLog, User, Task, WORKFORCE_ROLES_LIST, ISSUE_CATEGORIES_LIST, IssueCategory, IssueSeverity, IssueImpact, TaskStatus } from '../types';
+import { DailyLog, User, Task, WORKFORCE_ROLES_LIST, ISSUE_CATEGORIES_LIST, IssueCategory, IssueSeverity, IssueImpact, TaskStatus, DailyLogTaskUpdate } from '../types';
 import { Camera, Calendar, Sun, Cloud, CloudRain, CloudSnow, CheckCircle2, X, AlertTriangle, Trash2, Plus, Minus, HardHat, Siren, AlertOctagon, ShieldCheck, Flame, DollarSign, Clock, Leaf, HeartPulse, Edit2, CheckSquare, Square, Loader2, Upload, Link as LinkIcon, ChevronDown, BarChart3, Droplets, Target } from 'lucide-react';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
@@ -33,7 +32,7 @@ export const DailyLogView: React.FC<DailyLogProps> = ({ logs, users, tasks, work
   
   // Task Progress State (The "Big Change")
   // We store temp updates locally before saving
-  const [taskUpdates, setTaskUpdates] = useState<{taskId: string, progressDelta: number, notes: string}[]>([]);
+  const [taskUpdates, setTaskUpdates] = useState<DailyLogTaskUpdate[]>([]);
   
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [type, setType] = useState<'Diário' | 'Vistoria' | 'Alerta' | 'Intercorrência'>('Diário');

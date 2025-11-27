@@ -27,77 +27,35 @@ export interface AppPermissions {
 
 export type RolePermissionsMap = Record<UserRole, AppPermissions>;
 
-// Mapeamento Estático Inicial (Fallback)
 export const DEFAULT_ROLE_PERMISSIONS: RolePermissionsMap = {
-  [UserRole.ADMIN]: {
-    viewDashboard: true,
-    viewWorks: true,
-    manageWorks: true,
-    viewFinance: true,
-    manageFinance: true,
-    viewGlobalTasks: true,
-    viewMaterials: true,
-    manageMaterials: true,
-    manageUsers: true,
-    isSystemAdmin: true
-  },
-  [UserRole.EDITOR]: {
-    viewDashboard: true,
-    viewWorks: true,
-    manageWorks: true,
-    viewFinance: true,
-    manageFinance: true,
-    viewGlobalTasks: true,
-    viewMaterials: true,
-    manageMaterials: true,
-    manageUsers: false, // Editor não gerencia usuários
-    isSystemAdmin: false
-  },
-  [UserRole.VIEWER]: {
-    viewDashboard: false, // Visitante vê apenas o que é permitido explicitamente (ex: Cliente vê obra própria)
-    viewWorks: true,
-    manageWorks: false,
-    viewFinance: false, // Por padrão false, lógica de negócio pode liberar financeiro específico
-    manageFinance: false,
-    viewGlobalTasks: false,
-    viewMaterials: false,
-    manageMaterials: false,
-    manageUsers: false,
-    isSystemAdmin: false
-  }
+  [UserRole.ADMIN]: { viewDashboard: true, viewWorks: true, manageWorks: true, viewFinance: true, manageFinance: true, viewGlobalTasks: true, viewMaterials: true, manageMaterials: true, manageUsers: true, isSystemAdmin: true },
+  [UserRole.EDITOR]: { viewDashboard: true, viewWorks: true, manageWorks: true, viewFinance: true, manageFinance: true, viewGlobalTasks: true, viewMaterials: true, manageMaterials: true, manageUsers: false, isSystemAdmin: false },
+  [UserRole.VIEWER]: { viewDashboard: false, viewWorks: true, manageWorks: false, viewFinance: false, manageFinance: false, viewGlobalTasks: false, viewMaterials: false, manageMaterials: false, manageUsers: false, isSystemAdmin: false }
 };
 
-// Mantendo exportação antiga para compatibilidade temporária, mas apontando para o default
 export const ROLE_PERMISSIONS = DEFAULT_ROLE_PERMISSIONS;
 
 export interface User {
   id: string;
-  name: string; // Nome de Exibição ou Contato Principal
+  name: string;
   email: string;
   avatar: string;
-  
-  // NEW STRUCTURE
-  category: UserCategory; // QUEM É (Identidade)
-  role: UserRole;         // O QUE FAZ (Permissão)
-  
+  category: UserCategory;
+  role: UserRole;
   status?: 'ACTIVE' | 'PENDING' | 'BLOCKED';
   cpf?: string;
   address?: string;
   phone?: string;
   birthDate?: string;
   notes?: string;
-  
-  // SUPPLIER SPECIFIC FIELDS
   cnpj?: string;
-  legalName?: string; // Razão Social
-  tradeName?: string; // Nome Fantasia
+  legalName?: string;
+  tradeName?: string;
   website?: string;
-  paymentInfo?: string; // Dados Bancários / Chave Pix
-  sellerName?: string; // Nome do Vendedor/Representante
-  sellerPhone?: string; // Whatsapp do Vendedor
-  
-  // SECURITY
-  mustChangePassword?: boolean; // Obrigar troca de senha no primeiro acesso
+  paymentInfo?: string;
+  sellerName?: string;
+  sellerPhone?: string;
+  mustChangePassword?: boolean;
 }
 
 export enum WorkStatus {
@@ -123,25 +81,25 @@ export interface ConstructionWork {
   name: string;
   client: string; 
   clientId?: string;
-  responsibleId?: string; // ID do Engenheiro/Responsável Técnico
+  responsibleId?: string;
   address: string;
   status: WorkStatus;
   progress: number;
-  progressMethod?: ProgressMethod; // Método de cálculo do progresso
+  progressMethod?: ProgressMethod;
   budget: number;
   startDate: string;
   endDate: string;
   imageUrl: string;
   description: string;
   teamIds?: string[];
-  driveLink?: string; // Link para Google Drive / Projetos
-  contractUrl?: string; // Link para o Contrato (PDF/Imagem)
-  stages?: WorkStage[]; // Custom Stages Timeline
+  driveLink?: string;
+  contractUrl?: string;
+  stages?: WorkStage[]; // Legacy field, now merged into Budget Categories in PlanningCenter
 }
 
 export enum TaskStatus {
   BACKLOG = 'Backlog',
-  PLANNING = 'Planejamento',
+  PLANNING = 'Planejamento', // Standard Status for Weekly Planning
   EXECUTION = 'Execução',
   WAITING_MARCOS = 'Aguardando Marcos',
   PURCHASE_LOGISTICS = 'Compra & Logística',
@@ -178,10 +136,11 @@ export interface Task {
   aiAnalysis?: string;
   planningWeek?: string; // Format "YYYY-Wxx"
   
-  // NEW FIELDS FOR ERP INTEGRATION
-  stageId?: string; // Link to Schedule Stage
-  estimatedCost?: number; // Value from Budget
-  physicalProgress?: number; // 0 to 100%
+  // UNIFIED WORKFLOW LINK
+  stageId?: string; // Links to BudgetCategory (Macro Stage)
+  estimatedCost?: number;
+  physicalProgress?: number;
+  stageContribution?: number; // % that this task represents of the stageId total completion
 }
 
 export enum FinanceType {
@@ -189,12 +148,19 @@ export enum FinanceType {
   INCOME = 'Receber'
 }
 
-export type FinanceCategory = string;
-
 export interface FinanceCategoryDefinition {
   id: string;
   name: string;
   type: 'EXPENSE' | 'INCOME' | 'BOTH';
+}
+
+// Sub-items within a Financial Record to avoid double entry
+export interface FinancialItemBreakdown {
+    itemName: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    totalPrice: number;
 }
 
 export interface FinancialRecord {
@@ -209,45 +175,23 @@ export interface FinancialRecord {
   paidDate?: string;
   status: 'Pendente' | 'Pago' | 'Atrasado';
   relatedBudgetCategoryId?: string;
+  
+  // NEW: Item Breakdown for Material Management
+  items?: FinancialItemBreakdown[];
 }
 
-// --- WORKFORCE TYPES ---
 export type WorkforceRole = 'Pedreiro' | 'Servente' | 'Eletricista' | 'Bombeiro' | 'Carpinteiro' | 'Ferreiro' | 'Pintor' | 'Gesseiro' | 'Terceirizados';
+export const WORKFORCE_ROLES_LIST: WorkforceRole[] = ['Pedreiro', 'Servente', 'Eletricista', 'Bombeiro', 'Carpinteiro', 'Ferreiro', 'Pintor', 'Gesseiro', 'Terceirizados'];
 
-export const WORKFORCE_ROLES_LIST: WorkforceRole[] = [
-  'Pedreiro', 'Servente', 'Eletricista', 'Bombeiro', 'Carpinteiro', 'Ferreiro', 'Pintor', 'Gesseiro', 'Terceirizados'
-];
-
-// --- INTERCORRÊNCIA / ISSUE TYPES ---
-export type IssueCategory = 
-  | 'Acidente de Trabalho'
-  | 'Erro de Execução'
-  | 'Erro de Projeto'
-  | 'Material Danificado/Faltante'
-  | 'Equipamento Quebrado'
-  | 'Condições Climáticas'
-  | 'Embargo/Fiscalização'
-  | 'Interferência Externa'
-  | 'Outros';
-
-export const ISSUE_CATEGORIES_LIST: IssueCategory[] = [
-  'Acidente de Trabalho',
-  'Erro de Execução',
-  'Erro de Projeto',
-  'Material Danificado/Faltante',
-  'Equipamento Quebrado',
-  'Condições Climáticas',
-  'Embargo/Fiscalização',
-  'Interferência Externa',
-  'Outros'
-];
+export type IssueCategory = 'Acidente de Trabalho' | 'Erro de Execução' | 'Erro de Projeto' | 'Material Danificado/Faltante' | 'Equipamento Quebrado' | 'Condições Climáticas' | 'Embargo/Fiscalização' | 'Interferência Externa' | 'Outros';
+export const ISSUE_CATEGORIES_LIST: IssueCategory[] = ['Acidente de Trabalho', 'Erro de Execução', 'Erro de Projeto', 'Material Danificado/Faltante', 'Equipamento Quebrado', 'Condições Climáticas', 'Embargo/Fiscalização', 'Interferência Externa', 'Outros'];
 
 export type IssueSeverity = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
 export type IssueImpact = 'Prazo' | 'Custo' | 'Qualidade' | 'Segurança' | 'Meio Ambiente';
 
 export interface DailyLogTaskUpdate {
     taskId: string;
-    progressDelta: number; // How much % advanced today (e.g. 10%)
+    progressDelta: number;
     notes?: string;
 }
 
@@ -256,23 +200,17 @@ export interface DailyLog {
   workId: string;
   authorId: string;
   date: string;
-  content: string; // General notes
+  content: string;
   images: string[];
   type: 'Diário' | 'Vistoria' | 'Alerta' | 'Intercorrência';
   weather?: 'Sol' | 'Nublado' | 'Chuva' | 'Neve';
-  relatedTaskId?: string; // Legacy field, replaced by taskUpdates
-  taskUpdates?: DailyLogTaskUpdate[]; // NEW: Multiple task updates per log
+  taskUpdates?: DailyLogTaskUpdate[];
   teamIds?: string[];
-  
-  // Efetivo do dia
   workforce?: Record<string, number>; 
-
-  // Campos de Intercorrência
   issueCategory?: IssueCategory;
   severity?: IssueSeverity;
   impacts?: IssueImpact[];
   actionPlan?: string;
-
   isResolved?: boolean;
   resolvedAt?: string;
   resolvedBy?: string;
@@ -322,7 +260,7 @@ export interface Material {
   description?: string;
 }
 
-// --- BUDGETING TYPES (ORÇAMENTO) ---
+// --- UNIFIED PLANNING TYPES (BUDGET + SCHEDULE) ---
 
 export interface BudgetItem {
   id: string;
@@ -330,19 +268,25 @@ export interface BudgetItem {
   unit: string;
   quantity: number;
   unitPrice: number;
-  totalPrice: number; // Calculated: qty * unitPrice
+  totalPrice: number;
   notes?: string;
 }
 
 export interface BudgetCategory {
   id: string;
-  name: string; // e.g. "1. Serviços Preliminares"
+  name: string;
   items: BudgetItem[];
-  categoryTotal: number; // Calculated sum of items
+  categoryTotal: number;
+  
+  // NEW: Schedule Fields (Gantt)
+  startDate?: string;
+  endDate?: string;
+  status?: StageStatus;
+  progress?: number; // Calculated from linked tasks
 }
 
 export interface WorkBudget {
-  id: string; // Usually matches workId for 1:1 relationship
+  id: string;
   workId: string;
   totalValue: number;
   categories: BudgetCategory[];
@@ -350,18 +294,8 @@ export interface WorkBudget {
   version?: number;
 }
 
-// --- INVENTORY & REAL ESTATE TYPES ---
-
 export type AssetType = 'EQUIPMENT' | 'REAL_ESTATE';
-
-export enum InventoryStatus {
-  AVAILABLE = 'Disponível',
-  IN_USE = 'Em Uso',
-  MAINTENANCE = 'Manutenção',
-  LOST = 'Perdido/Quebrado',
-  LOANED = 'Emprestado'
-}
-
+export enum InventoryStatus { AVAILABLE = 'Disponível', IN_USE = 'Em Uso', MAINTENANCE = 'Manutenção', LOST = 'Perdido/Quebrado', LOANED = 'Emprestado' }
 export type RealEstateStatus = 'EM_CONSTRUCAO' | 'PRONTO' | 'ALUGADO' | 'A_VENDA' | 'VENDIDO';
 
 export interface InventoryMovement {
@@ -375,59 +309,43 @@ export interface InventoryMovement {
 
 export interface InventoryItem {
   id: string;
-  assetType?: AssetType; // Defaults to EQUIPMENT for compatibility
-  
-  // Common Fields
+  assetType?: AssetType;
   name: string;
-  category: string; // Equipment: Type | Real Estate: 'Planta', 'Pronto', etc.
+  category: string;
   imageUrl?: string;
   notes?: string;
   lastMovementDate: string;
-
-  // Equipment Specific
   brand?: string;
   serialNumber?: string;
-  status: InventoryStatus | RealEstateStatus; // Polymorphic Status
+  status: InventoryStatus | RealEstateStatus;
   currentWorkId?: string;
   currentPartnerId?: string;
-  estimatedValue?: number; // Current Asset Value (Equipment)
-  history?: InventoryMovement[]; // New: Tracking history
-
-  // Real Estate Specific
-  developmentName?: string; // Empreendimento
-  unitNumber?: string; // Unidade (Apt 101)
-  developerName?: string; // Construtora Origem
-  purchaseValue?: number; // Valor Contrato (Liability)
-  amountPaid?: number; // Valor já pago (Equity)
-  keyDeliveryDate?: string; // Previsão chaves
-  documentLink?: string; // Drive Link
+  estimatedValue?: number;
+  history?: InventoryMovement[];
+  developmentName?: string;
+  unitNumber?: string;
+  developerName?: string;
+  purchaseValue?: number;
+  amountPaid?: number;
+  keyDeliveryDate?: string;
+  documentLink?: string;
 }
 
-// --- RENTAL CONTROL TYPES (ALUGUEIS) ---
-
-export enum RentalStatus {
-  ACTIVE = 'Ativo (Em Uso)',
-  RETURNED = 'Devolvido',
-  OVERDUE = 'Atrasado'
-}
+export enum RentalStatus { ACTIVE = 'Ativo (Em Uso)', RETURNED = 'Devolvido', OVERDUE = 'Atrasado' }
 
 export interface RentalItem {
   id: string;
   workId: string;
   itemName: string;
-  supplierId?: string; // Link user category SUPPLIER
-  supplierName?: string; // Fallback text
-  
+  supplierId?: string;
+  supplierName?: string;
   quantity: number;
-  unit: string; // e.g. 'pç', 'm²', 'conjunto'
-  
-  unitPrice: number; // Preço unitário do período
+  unit: string;
+  unitPrice: number;
   billingPeriod: 'Diária' | 'Semanal' | 'Quinzenal' | 'Mensal' | 'Total';
-  
-  startDate: string; // Data que chegou na obra
-  endDate: string; // Data prevista de devolução / vencimento
-  returnDate?: string; // Data real da devolução
-  
+  startDate: string;
+  endDate: string;
+  returnDate?: string;
   status: RentalStatus;
   notes?: string;
 }

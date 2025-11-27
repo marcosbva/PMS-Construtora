@@ -56,7 +56,19 @@ interface DashboardProps {
   onNavigate?: (view: string) => void; 
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [], rentals = [], inventory = [], onNavigate }) => {
+// Stable references for default props to prevent useEffect loops
+const EMPTY_ORDERS: MaterialOrder[] = [];
+const EMPTY_RENTALS: RentalItem[] = [];
+const EMPTY_INVENTORY: InventoryItem[] = [];
+
+export const Dashboard: React.FC<DashboardProps> = ({ 
+    works, 
+    finance, 
+    orders = EMPTY_ORDERS, 
+    rentals = EMPTY_RENTALS, 
+    inventory = EMPTY_INVENTORY, 
+    onNavigate 
+}) => {
   const [logsLoading, setLogsLoading] = useState(true);
   const [allLogs, setAllLogs] = useState<DailyLog[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
@@ -94,9 +106,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ works, finance, orders = [
     const filteredFinance = selectedWorkId === 'ALL' ? finance : finance.filter(f => f.workId === selectedWorkId);
     const filteredLogs = selectedWorkId === 'ALL' ? allLogs : allLogs.filter(l => l.workId === selectedWorkId);
     const filteredRentals = selectedWorkId === 'ALL' ? rentals : rentals.filter(r => r.workId === selectedWorkId);
-    // Inventory is global, but could be filtered if assigned to work. For "Patrimony" it usually means everything the company owns.
-    // If a specific work is selected, we might show equipment *at that work*, but Real Estate is usually corporate level.
-    // For simplicity, let's keep Assets global in the main KPI, or filter by 'currentWorkId' if Work is selected.
     
     // Asset Logic:
     let filteredInventory = inventory;
