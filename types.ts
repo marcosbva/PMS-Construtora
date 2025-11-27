@@ -176,7 +176,12 @@ export interface Task {
   completedDate?: string;
   images: string[];
   aiAnalysis?: string;
-  planningWeek?: string; // New field: Format "YYYY-Wxx" (e.g., "2023-W42")
+  planningWeek?: string; // Format "YYYY-Wxx"
+  
+  // NEW FIELDS FOR ERP INTEGRATION
+  stageId?: string; // Link to Schedule Stage
+  estimatedCost?: number; // Value from Budget
+  physicalProgress?: number; // 0 to 100%
 }
 
 export enum FinanceType {
@@ -203,8 +208,6 @@ export interface FinancialRecord {
   dueDate: string;
   paidDate?: string;
   status: 'Pendente' | 'Pago' | 'Atrasado';
-  
-  // LINK TO BUDGET (NEW)
   relatedBudgetCategoryId?: string;
 }
 
@@ -242,16 +245,23 @@ export const ISSUE_CATEGORIES_LIST: IssueCategory[] = [
 export type IssueSeverity = 'Baixa' | 'Média' | 'Alta' | 'Crítica';
 export type IssueImpact = 'Prazo' | 'Custo' | 'Qualidade' | 'Segurança' | 'Meio Ambiente';
 
+export interface DailyLogTaskUpdate {
+    taskId: string;
+    progressDelta: number; // How much % advanced today (e.g. 10%)
+    notes?: string;
+}
+
 export interface DailyLog {
   id: string;
   workId: string;
   authorId: string;
   date: string;
-  content: string;
+  content: string; // General notes
   images: string[];
   type: 'Diário' | 'Vistoria' | 'Alerta' | 'Intercorrência';
   weather?: 'Sol' | 'Nublado' | 'Chuva' | 'Neve';
-  relatedTaskId?: string;
+  relatedTaskId?: string; // Legacy field, replaced by taskUpdates
+  taskUpdates?: DailyLogTaskUpdate[]; // NEW: Multiple task updates per log
   teamIds?: string[];
   
   // Efetivo do dia
@@ -261,7 +271,7 @@ export interface DailyLog {
   issueCategory?: IssueCategory;
   severity?: IssueSeverity;
   impacts?: IssueImpact[];
-  actionPlan?: string; // O que foi feito imediatamente
+  actionPlan?: string;
 
   isResolved?: boolean;
   resolvedAt?: string;

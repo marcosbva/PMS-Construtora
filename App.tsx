@@ -336,7 +336,7 @@ function App() {
               )}
               {(currentUser.role === UserRole.ADMIN || permissions[currentUser.role]?.viewGlobalTasks) && (
                   <button onClick={() => navigateTo('TASKS')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${currentView === 'TASKS' ? 'bg-pms-600 text-white shadow-lg shadow-pms-600/20 font-bold' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}>
-                    <Briefcase size={18} /> Tarefas Gerais
+                    <Briefcase size={18} /> Tarefas da Semana
                   </button>
               )}
               {(currentUser.role === UserRole.ADMIN || permissions[currentUser.role]?.viewFinance) && (
@@ -489,12 +489,14 @@ function App() {
                                 onAddLog={(l) => api.createLog(l)}
                                 onUpdateLog={(l) => api.updateLog(l)}
                                 onDeleteLog={(id) => api.deleteLog(id)}
+                                onUpdateTask={(t) => api.updateTask(t)} // PASSED FOR PROGRESS UPDATES
                             />
                         )}
 
                         {currentView === 'FINANCE' && (
                             <FinanceView 
                                 records={finance.filter(f => f.workId === activeWork.id)}
+                                tasks={tasks.filter(t => t.workId === activeWork.id)} // PASSED FOR MEASUREMENT
                                 currentUser={currentUser}
                                 users={users}
                                 work={activeWork}

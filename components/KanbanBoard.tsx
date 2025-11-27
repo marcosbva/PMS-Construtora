@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Task, TaskStatusDefinition, TaskPriority, User, TaskStatus } from '../types';
-import { AlertCircle, BrainCircuit, Plus, Edit2 } from 'lucide-react';
+import { AlertCircle, BrainCircuit, Plus, Edit2, DollarSign, Ruler } from 'lucide-react';
 import { analyzeTaskContent } from '../services/geminiService';
 
 interface KanbanBoardProps {
@@ -33,6 +33,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
   // Form State
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [estimatedCost, setEstimatedCost] = useState('');
+  const [physicalProgress, setPhysicalProgress] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const handleStatusChange = (task: Task, newStatus: string) => {
@@ -40,8 +42,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
     
     if (newStatus === TaskStatus.DONE) {
       updatedTask.completedDate = new Date().toISOString().split('T')[0];
+      updatedTask.physicalProgress = 100; // Auto-complete
     } else {
-      // Optional: Clear completed date if moved back from DONE
       // updatedTask.completedDate = undefined; 
     }
 
@@ -52,6 +54,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
       setEditingTask(null);
       setNewTaskTitle('');
       setNewTaskDesc('');
+      setEstimatedCost('');
+      setPhysicalProgress(0);
       setIsModalOpen(true);
   };
 
@@ -59,6 +63,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
       setEditingTask(task);
       setNewTaskTitle(task.title);
       setNewTaskDesc(task.description);
+      setEstimatedCost(task.estimatedCost ? task.estimatedCost.toString() : '');
+      setPhysicalProgress(task.physicalProgress || 0);
       setIsModalOpen(true);
   };
 
@@ -70,7 +76,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
         const updatedTask: Task = {
             ...editingTask,
             title: newTaskTitle,
-            description: newTaskDesc
+            description: newTaskDesc,
+            estimatedCost: estimatedCost ? parseFloat(estimatedCost) : undefined,
+            physicalProgress: physicalProgress
         };
         onUpdateTask(updatedTask);
         setIsModalOpen(false);
@@ -78,7 +86,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
         // Create Mode
         setIsAnalyzing(true);
         
-        // AI Analysis for priority and NC detection
+        // AI Analysis
         const aiResult = await analyzeTaskContent(newTaskTitle, newTaskDesc);
         
         const newTask: Task = {
@@ -91,7 +99,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
           assignedTo: currentUser.id,
           dueDate: new Date().toISOString().split('T')[0],
           images: [],
-          aiAnalysis: aiResult.summary
+          aiAnalysis: aiResult.summary,
+          estimatedCost: estimatedCost ? parseFloat(estimatedCost) : undefined,
+          physicalProgress: physicalProgress
         };
 
         onAddTask(newTask);
@@ -109,7 +119,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
     <div className="h-full flex flex-col">
       <div className="flex justify-between items-center mb-4 px-2">
         <h2 className="text-xl font-bold text-slate-800 hidden md:block">Quadro de Tarefas</h2>
-        {/* Hide button for Clients */}
         {!isClient && (
             <button 
             onClick={openCreateModal}
@@ -166,13 +175,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
                       </div>
 
                       <h4 className="font-semibold text-slate-800 text-sm mb-1 line-clamp-2">{task.title}</h4>
-                      <p className="text-xs text-slate-500 mb-3 line-clamp-2">{task.description}</p>
+                      <p className="text-xs text-slate-500 mb-2 line-clamp-2">{task.description}</p>
                       
-                      {task.aiAnalysis && (
-                        <div className="bg-indigo-50 p-2 rounded text-[10px] text-indigo-700 mb-2 flex items-start gap-1">
-                           <BrainCircuit size={10} className="mt-0.5 flex-shrink-0"/>
-                           <span>AI: {task.aiAnalysis}</span>
-                        </div>
+                      {/* Physical Progress Bar */}
+                      {(task.physicalProgress || 0) > 0 && (
+                          <div className="mb-3">
+                              <div className="flex justify-between text-[10px] text-slate-400 mb-0.5">
+                                  <span>Progresso Físico</span>
+                                  <span>{task.physicalProgress}%</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                  <div className="h-full bg-green-500" style={{width: `${task.physicalProgress}%`}}></div>
+                              </div>
+                          </div>
                       )}
 
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
@@ -219,11 +234,39 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, users, currentU
             />
             <textarea 
               placeholder="Descrição detalhada..."
-              className="w-full border border-slate-300 rounded-lg p-3 mb-4 h-32 resize-none focus:ring-2 focus:ring-pms-500 outline-none"
+              className="w-full border border-slate-300 rounded-lg p-3 mb-4 h-24 resize-none focus:ring-2 focus:ring-pms-500 outline-none"
               value={newTaskDesc}
               onChange={e => setNewTaskDesc(e.target.value)}
             />
             
+            {/* NEW: Cost & Progress Fields */}
+            <div className="grid grid-cols-2 gap-4 mb-6 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
+                        <DollarSign size={12}/> Orçamento (Est.)
+                    </label>
+                    <input 
+                        type="number" 
+                        className="w-full border rounded p-2 text-sm"
+                        placeholder="0.00"
+                        value={estimatedCost}
+                        onChange={e => setEstimatedCost(e.target.value)}
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
+                        <Ruler size={12}/> Avanço Físico (%)
+                    </label>
+                    <input 
+                        type="number" 
+                        min="0" max="100"
+                        className="w-full border rounded p-2 text-sm"
+                        value={physicalProgress}
+                        onChange={e => setPhysicalProgress(Number(e.target.value))}
+                    />
+                </div>
+            </div>
+
             <div className="flex gap-3 justify-end">
               <button 
                 onClick={() => setIsModalOpen(false)}

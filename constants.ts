@@ -8,6 +8,20 @@ const getFutureDate = (days: number) => {
   return date.toISOString().split('T')[0];
 };
 
+export const getLocalToday = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const formatLocalDate = (dateStr: string) => {
+  if (!dateStr) return '';
+  const [year, month, day] = dateStr.split('-');
+  return `${day}/${month}/${year}`;
+}
+
 // --- STATUS DEFINITIONS ---
 export const DEFAULT_TASK_STATUSES: TaskStatusDefinition[] = [
   { id: TaskStatus.BACKLOG, label: 'Backlog', colorScheme: 'gray', order: 0 },
