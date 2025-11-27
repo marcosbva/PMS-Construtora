@@ -48,6 +48,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const [showItems, setShowItems] = useState(false);
   const [items, setItems] = useState<FinancialItemBreakdown[]>([{ itemName: '', quantity: 1, unit: 'un', unitPrice: 0, totalPrice: 0 }]);
 
+  // Fix infinite loop by checking work.id specifically
   useEffect(() => {
     if (work?.id) api.getBudget(work.id).then(setWorkBudget).catch(console.error);
   }, [work?.id]);
@@ -449,7 +450,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Categoria</label>
                         <select className="w-full border rounded-lg p-2 text-sm bg-white" value={category} onChange={(e) => setCategory(e.target.value)}>
-                            {financeCategories.filter(c => c.type === 'BOTH' || c.type === (type === FinanceType.EXPENSE ? 'EXPENSE' : 'INCOME')).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                            {financeCategories.filter(c => c.type === 'BOTH' || c.type === (type === FinanceType.EXPENSE ? 'EXPENSE' : 'INCOME') as 'EXPENSE' | 'INCOME' | 'BOTH').map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                         </select>
                     </div>
                     <div>

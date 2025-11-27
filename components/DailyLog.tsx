@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { DailyLog, User, Task, WORKFORCE_ROLES_LIST, ISSUE_CATEGORIES_LIST, IssueCategory, IssueSeverity, IssueImpact, TaskStatus, DailyLogTaskUpdate } from '../types';
 import { Camera, Calendar, Sun, Cloud, CloudRain, CloudSnow, CheckCircle2, X, AlertTriangle, Trash2, Plus, Minus, HardHat, Siren, AlertOctagon, ShieldCheck, Flame, DollarSign, Clock, Leaf, HeartPulse, Edit2, CheckSquare, Square, Loader2, Upload, Link as LinkIcon, ChevronDown, BarChart3, Droplets, Target } from 'lucide-react';
