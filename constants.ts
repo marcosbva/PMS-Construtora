@@ -1,13 +1,6 @@
 
 import { ConstructionWork, User, Task, TaskStatus, FinancialRecord, DailyLog, MaterialOrder, TaskStatusDefinition, Material, FinanceCategoryDefinition } from './types';
 
-// Helper to get a date string relative to today
-const getFutureDate = (days: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().split('T')[0];
-};
-
 export const getLocalToday = () => {
   const date = new Date();
   const year = date.getFullYear();
@@ -42,6 +35,7 @@ export const DEFAULT_FINANCE_CATEGORIES: FinanceCategoryDefinition[] = [
   { id: 'cat_admin', name: 'Administrativo', type: 'EXPENSE' },
   { id: 'cat_alim', name: 'Alimentação', type: 'EXPENSE' },
   { id: 'cat_proj', name: 'Projetos', type: 'BOTH' },
+  { id: 'cat_equip', name: 'Locação de Equipamentos', type: 'EXPENSE' },
   { id: 'cat_other', name: 'Outros', type: 'BOTH' }
 ];
 
@@ -132,8 +126,14 @@ export const DEFAULT_MATERIALS: Material[] = [
     { id: 'mat_interruptor_s', name: 'Conjunto Interruptor Simples c/ Placa', category: 'Instalações Elétricas', unit: 'un', priceEstimate: 14.00 },
     { id: 'mat_fita_isolante', name: 'Fita Isolante 33+ 20m', category: 'Instalações Elétricas', unit: 'un', priceEstimate: 18.00, brand: '3M' },
     { id: 'mat_mod_smart', name: 'Módulo Relé Wi-Fi 2 Canais', category: 'Automação', unit: 'un', priceEstimate: 95.00, brand: 'Sonoff/Tuya' },
-    { id: 'mat_perfil_led', name: 'Perfil de Alumínio para LED 2m', category: 'Iluminação', unit: 'barra', priceEstimate: 85.00 },
     { id: 'mat_conector_wago', name: 'Conector de Torção/Wago (Pacote)', category: 'Instalações Elétricas', unit: 'pct', priceEstimate: 45.00 },
+
+    // 5.1 ILUMINAÇÃO (NOVOS)
+    { id: 'mat_painel_led_18', name: 'Painel LED Embutir 18W Quadrado', category: 'Iluminação', unit: 'un', priceEstimate: 35.00, brand: 'Avant/Taschibra' },
+    { id: 'mat_lamp_led_9', name: 'Lâmpada LED Bulbo 9W E27', category: 'Iluminação', unit: 'un', priceEstimate: 9.50 },
+    { id: 'mat_spot_led_5', name: 'Spot LED Direcionável 5W', category: 'Iluminação', unit: 'un', priceEstimate: 18.00 },
+    { id: 'mat_fita_led_5m', name: 'Fita LED 3000K 5m + Fonte', category: 'Iluminação', unit: 'rolo', priceEstimate: 65.00 },
+    { id: 'mat_perfil_led', name: 'Perfil de Alumínio para LED 2m', category: 'Iluminação', unit: 'barra', priceEstimate: 85.00 },
 
     // 6. REVESTIMENTOS & PISOS
     { id: 'mat_porc_120', name: 'Porcelanato Polido 120x120 Calacata', category: 'Revestimentos', unit: 'm²', priceEstimate: 280.00, brand: 'Portinari/Portobello' },
@@ -142,7 +142,6 @@ export const DEFAULT_MATERIALS: Material[] = [
     { id: 'mat_piso_ceramico', name: 'Piso Cerâmico PEI-4 60x60', category: 'Revestimentos', unit: 'm²', priceEstimate: 45.00 },
     { id: 'mat_vinilico', name: 'Piso Vinílico Click 5mm Capa 0.5', category: 'Revestimentos', unit: 'm²', priceEstimate: 165.00, brand: 'Tarkett' },
     { id: 'mat_intertravado', name: 'Piso Intertravado 16 faces (Paver)', category: 'Revestimentos', unit: 'm²', priceEstimate: 55.00 },
-    { id: 'mat_grama', name: 'Grama Esmeralda em Placa', category: 'Revestimentos', unit: 'm²', priceEstimate: 12.00 },
     { id: 'mat_rodape', name: 'Rodapé Poliestireno 15cm (Branco)', category: 'Revestimentos', unit: 'barra', priceEstimate: 110.00, brand: 'Santa Luzia' },
     { id: 'mat_arg_ac1', name: 'Argamassa AC-I (Interna)', category: 'Revestimentos', unit: 'saco', priceEstimate: 15.00, brand: 'Quartzolit' },
     { id: 'mat_arg_ac2', name: 'Argamassa AC-II (Externa)', category: 'Revestimentos', unit: 'saco', priceEstimate: 28.00, brand: 'Quartzolit' },
@@ -207,6 +206,9 @@ export const DEFAULT_MATERIALS: Material[] = [
     { id: 'mat_fechadura_int', name: 'Fechadura Interna Banheiro/Quarto', category: 'Ferragens', unit: 'un', priceEstimate: 85.00, brand: 'Stam/Pado' },
     { id: 'mat_fechadura_ext', name: 'Fechadura Externa Inox Roseta', category: 'Ferragens', unit: 'un', priceEstimate: 180.00, brand: 'Stam/Pado' },
     { id: 'mat_dobradica', name: 'Dobradiça Inox 3.5" (Cartela c/ 3)', category: 'Ferragens', unit: 'cartela', priceEstimate: 45.00 },
+    { id: 'mat_bucha_6', name: 'Bucha 6mm com Anel (Pacote)', category: 'Ferragens', unit: 'pct', priceEstimate: 12.00 },
+    { id: 'mat_bucha_8', name: 'Bucha 8mm com Anel (Pacote)', category: 'Ferragens', unit: 'pct', priceEstimate: 15.00 },
+    { id: 'mat_parafuso_chip', name: 'Parafuso Chipboard 4x40 (Caixa)', category: 'Ferragens', unit: 'cx', priceEstimate: 35.00 },
 
     // 11. CLIMATIZAÇÃO
     { id: 'mat_kit_infra', name: 'Kit Infra Ar Condicionado (Cobre 1/4+3/8)', category: 'Climatização', unit: 'm', priceEstimate: 85.00 },
@@ -228,7 +230,14 @@ export const DEFAULT_MATERIALS: Material[] = [
     { id: 'mat_disco_corte', name: 'Disco de Corte Fino Inox 4.1/2', category: 'Ferragens', unit: 'un', priceEstimate: 6.50 },
     { id: 'mat_disco_diam', name: 'Disco Diamantado Segmentado (Concreto)', category: 'Ferragens', unit: 'un', priceEstimate: 25.00 },
     { id: 'mat_broca_6', name: 'Broca de Widea 6mm', category: 'Ferragens', unit: 'un', priceEstimate: 8.00 },
-    { id: 'mat_broca_8', name: 'Broca de Widea 8mm', category: 'Ferragens', unit: 'un', priceEstimate: 10.00 }
+    { id: 'mat_broca_8', name: 'Broca de Widea 8mm', category: 'Ferragens', unit: 'un', priceEstimate: 10.00 },
+    { id: 'mat_saco_entulho', name: 'Saco de Ráfia para Entulho', category: 'Limpeza & Obra', unit: 'un', priceEstimate: 2.50 },
+    { id: 'mat_vassoura', name: 'Vassourão Gari 60cm', category: 'Limpeza & Obra', unit: 'un', priceEstimate: 35.00 },
+
+    // 14. JARDINAGEM
+    { id: 'mat_grama', name: 'Grama Esmeralda em Placa', category: 'Jardinagem', unit: 'm²', priceEstimate: 12.00 },
+    { id: 'mat_terra_veg', name: 'Terra Vegetal Adubada (Saco 20kg)', category: 'Jardinagem', unit: 'saco', priceEstimate: 18.00 },
+    { id: 'mat_seixo', name: 'Seixo de Rio (Pedra de Jardim)', category: 'Jardinagem', unit: 'saco', priceEstimate: 35.00 }
 ];
 
 // --- ARRAYS VAZIOS (Sistema Zerado) ---

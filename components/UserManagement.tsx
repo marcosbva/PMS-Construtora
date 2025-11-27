@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition, RolePermissionsMap, AppPermissions, DailyLog } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck, Phone, Building2, MapPin, Globe, CreditCard, History, ShoppingBag, Search, MessageCircle, Smartphone, ChevronDown, ChevronRight, LayoutGrid, FolderPlus, FolderInput } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck, Phone, Building2, MapPin, Globe, CreditCard, History, ShoppingBag, Search, MessageCircle, Smartphone, ChevronDown, ChevronRight, LayoutGrid, FolderPlus, FolderInput, ChevronsDown, ChevronsUp } from 'lucide-react';
 import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSecondaryAuthUser } from '../services/firebase';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
@@ -229,6 +229,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           ...prev,
           [cat]: !prev[cat] // toggle
       }));
+  };
+
+  const handleExpandAll = () => {
+      // Clear state means everything uses default 'true' or we explicitly set all to true?
+      // Our logic: const isExpanded = expandedCategories[category] !== false;
+      // So setting empty object resets everything to open.
+      setExpandedCategories({});
+  };
+
+  const handleCollapseAll = () => {
+      const newState: Record<string, boolean> = {};
+      Object.keys(groupedMaterials).forEach(cat => {
+          newState[cat] = false;
+      });
+      setExpandedCategories(newState);
   };
 
   // --- SUPPLIER HISTORY LOGIC ---
@@ -666,6 +681,23 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             {/* MATERIALS TAB (GROUPED BY CATEGORY) */}
             {activeTab === 'MATERIALS' && (
                 <div className="space-y-4 pb-10">
+                    <div className="flex justify-end gap-2 mb-2">
+                        <button 
+                            onClick={handleExpandAll} 
+                            className="text-xs text-slate-500 hover:text-pms-600 font-bold flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+                            title="Expandir todas as categorias"
+                        >
+                            <ChevronsDown size={14}/> Expandir Tudo
+                        </button>
+                        <button 
+                            onClick={handleCollapseAll} 
+                            className="text-xs text-slate-500 hover:text-pms-600 font-bold flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+                            title="Recolher todas as categorias"
+                        >
+                            <ChevronsUp size={14}/> Recolher Tudo
+                        </button>
+                    </div>
+
                     {Object.keys(groupedMaterials).sort().map(category => {
                         const items = groupedMaterials[category];
                         const isExpanded = expandedCategories[category] !== false; // Default Open

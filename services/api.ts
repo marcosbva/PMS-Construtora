@@ -13,11 +13,13 @@ import {
   setDoc,
   getDoc,
   onSnapshot,
-  Firestore
+  Firestore,
+  writeBatch
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getDb, getStorageInstance } from "./firebase";
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, FinanceCategoryDefinition, WorkBudget, InventoryItem, RentalItem } from "../types";
+import { DEFAULT_MATERIALS, DEFAULT_FINANCE_CATEGORIES } from "../constants";
 
 const COLLECTIONS = {
   USERS: 'users',
@@ -466,6 +468,46 @@ export const api = {
   },
 
   restoreDefaults: async () => {
-      console.log("Resetting database...");
+      console.log("Restaurando dados padrão (Forçado)...");
+      const db = getDb();
+      if (!db) return;
+
+      try {
+          const promises = [];
+
+          // 1. Finance Categories (Update or Create)
+          for (const cat of DEFAULT_FINANCE_CATEGORIES) {
+              promises.push(setDoc(doc(db, COLLECTIONS.CATEGORIES, cat.id), cleanData(cat), { merge: true }));
+          }
+
+          // 2. Materials (Batch upload the full list - Upsert)
+          // We use batching because there are many materials
+          const batch = writeBatch(db);
+          let count = 0;
+          
+          for (const mat of DEFAULT_MATERIALS) {
+              const ref = doc(db, COLLECTIONS.MATERIALS, mat.id);
+              batch.set(ref, cleanData(mat), { merge: true });
+              count++;
+              
+              // Firestore batch limit is 500
+              if (count >= 400) {
+                  await batch.commit();
+                  count = 0;
+              }
+          }
+          if (count > 0) {
+              await batch.commit();
+          }
+
+          await Promise.all(promises);
+          
+          alert("Sistema atualizado! O catálogo de materiais foi expandido com sucesso.");
+          window.location.reload();
+
+      } catch (error) {
+          console.error("Erro ao restaurar defaults:", error);
+          alert("Erro ao popular dados.");
+      }
   }
 };

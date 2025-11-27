@@ -1,6 +1,30 @@
+
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+// Manually defining a subset of the rich material list to avoid import issues in pure node script
+// In a real monorepo, we would import from a shared package
+const SEED_MATERIALS = [
+    { id: 'mat_cim_cp2', name: 'Cimento CP II - 50kg', category: 'Estrutura & Alvenaria', unit: 'saco', priceEstimate: 36.90, brand: 'Votoran/Cauê' },
+    { id: 'mat_areia_lav', name: 'Areia Média Lavada', category: 'Estrutura & Alvenaria', unit: 'm³', priceEstimate: 160.00 },
+    { id: 'mat_areia_fina', name: 'Areia Fina (Acabamento)', category: 'Estrutura & Alvenaria', unit: 'm³', priceEstimate: 170.00 },
+    { id: 'mat_brita_1', name: 'Pedra Brita 1', category: 'Estrutura & Alvenaria', unit: 'm³', priceEstimate: 140.00 },
+    { id: 'mat_bloco_estr', name: 'Bloco Estrutural Cerâmico 14x19x39', category: 'Estrutura & Alvenaria', unit: 'milheiro', priceEstimate: 2100.00 },
+    { id: 'mat_aco_10', name: 'Vergalhão CA-50 10mm (3/8")', category: 'Estrutura & Alvenaria', unit: 'barra', priceEstimate: 58.00 },
+    { id: 'mat_concreto_us', name: 'Concreto Usinado FCK 30Mpa', category: 'Estrutura & Alvenaria', unit: 'm³', priceEstimate: 480.00 },
+    { id: 'mat_tabua_pinus', name: 'Tábua de Pinus 30cm (Fôrma)', category: 'Madeiras & Carpintaria', unit: 'm', priceEstimate: 12.00 },
+    { id: 'mat_manta_asf', name: 'Manta Asfáltica Aluminizada 3mm', category: 'Impermeabilização', unit: 'rolo', priceEstimate: 380.00 },
+    { id: 'mat_tubo_sold_25', name: 'Tubo Soldável PVC 25mm (Água Fria)', category: 'Instalações Hidráulicas', unit: 'barra', priceEstimate: 22.00 },
+    { id: 'mat_tubo_esgoto_100', name: 'Tubo Esgoto SN 100mm', category: 'Instalações Hidráulicas', unit: 'barra', priceEstimate: 65.00 },
+    { id: 'mat_cabo_2_5', name: 'Cabo Flexível 2.5mm (Tomadas)', category: 'Instalações Elétricas', unit: 'rolo', priceEstimate: 260.00 },
+    { id: 'mat_disjuntor_20', name: 'Disjuntor DIN Unipolar 20A', category: 'Instalações Elétricas', unit: 'un', priceEstimate: 18.00 },
+    { id: 'mat_porc_120', name: 'Porcelanato Polido 120x120 Calacata', category: 'Revestimentos', unit: 'm²', priceEstimate: 280.00 },
+    { id: 'mat_arg_ac3', name: 'Argamassa AC-III', category: 'Revestimentos', unit: 'saco', priceEstimate: 45.00 },
+    { id: 'mat_tinta_premium', name: 'Tinta Acrílica Premium 18L', category: 'Pintura', unit: 'lata', priceEstimate: 620.00 },
+    { id: 'mat_bacia_cx', name: 'Vaso Sanitário c/ Caixa Acoplada', category: 'Louças e Metais', unit: 'un', priceEstimate: 450.00 },
+    { id: 'mat_telha_amer', name: 'Telha Cerâmica Americana', category: 'Cobertura & Telhado', unit: 'milheiro', priceEstimate: 1800.00 }
+];
 
 async function main() {
   console.log("🌱 Iniciando Seed (Banco de Dados SQLite)...");
@@ -123,12 +147,9 @@ async function main() {
       await prisma.financialRecord.create({ data: f });
   }
 
-  // 8. Materials
-  const mats = [
-      { id: 'm1', name: 'Cimento CP II', category: 'Alvenaria', unit: 'saco', brand: 'Votoran', priceEstimate: 32.50 },
-      { id: 'm2', name: 'Areia Média', category: 'Alvenaria', unit: 'm³', priceEstimate: 120.00 }
-  ];
-  for (const m of mats) {
+  // 8. Materials (Rich Seed)
+  console.log(`Inserindo ${SEED_MATERIALS.length} materiais base...`);
+  for (const m of SEED_MATERIALS) {
       await prisma.material.create({ data: m });
   }
 
