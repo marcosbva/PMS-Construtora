@@ -1,7 +1,6 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, InventoryItem, RentalItem, FinanceCategoryDefinition } from './types';
+import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, InventoryItem, RentalItem, FinanceCategoryDefinition, FinanceType } from './types';
 import { AuthScreen } from './components/AuthScreen';
 import { FinanceView } from './components/FinanceView';
 import { GlobalTaskList } from './components/GlobalTaskList';
@@ -17,7 +16,7 @@ import { RentalControl } from './components/RentalControl';
 import { ClientDashboard } from './components/ClientDashboard';
 import { api } from './services/api';
 import { DEFAULT_TASK_STATUSES, DEFAULT_FINANCE_CATEGORIES, DEFAULT_MATERIALS } from './constants';
-import { LayoutGrid, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, Wrench, Archive, ChevronRight, HardHat, Settings, FolderOpen, CalendarCheck } from 'lucide-react';
+import { LayoutGrid, DollarSign, Users, Package, LogOut, Menu, Briefcase, Plus, X, Wrench, Archive, ChevronRight, HardHat, Settings, FolderOpen, CalendarCheck, ChevronDown, Circle, Siren, AlertTriangle, ArrowRight, ShieldCheck, Calendar } from 'lucide-react';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -39,6 +38,9 @@ function App() {
 
   const [currentView, setCurrentView] = useState('DASHBOARD');
   const [activeWorkId, setActiveWorkId] = useState<string | null>(null);
+  
+  // UI State
+  const [isWorksExpanded, setIsWorksExpanded] = useState(true); // Default open for easy access
   const [isEditWorkModalOpen, setIsEditWorkModalOpen] = useState(false);
   const [editingWork, setEditingWork] = useState<ConstructionWork>({
       id: '', name: '', address: '', client: '', status: WorkStatus.PLANNING, 
@@ -90,7 +92,7 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
       
-      {/* --- NEW SIDEBAR STRUCTURE --- */}
+      {/* --- SIDEBAR --- */}
       <aside className={`fixed md:relative z-50 w-72 bg-slate-900 text-white flex flex-col h-full shadow-2xl transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           
           {/* 1. Header */}
@@ -133,7 +135,7 @@ function App() {
                   </div>
               </div>
 
-              {/* SECTION: OBRAS (With Hover Logic) */}
+              {/* SECTION: OBRAS (ACCORDION STYLE) */}
               <div>
                   <div className="flex justify-between items-center px-3 mb-2">
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Projetos</p>
@@ -141,42 +143,46 @@ function App() {
                   </div>
                   
                   <div className="space-y-1">
-                      {/* HOVER MENU FOR ACTIVE WORKS */}
-                      <div className="group relative">
-                          <button className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-all group-hover:bg-slate-800 group-hover:text-white">
-                              <div className="flex items-center gap-3">
-                                  <HardHat size={18} className="text-pms-500"/>
-                                  <span>Obras em Andamento</span>
-                              </div>
-                              <ChevronRight size={14} className="text-slate-500 group-hover:text-white"/>
-                          </button>
-
-                          {/* THE POP-OUT MENU */}
-                          <div className="hidden group-hover:block absolute left-full top-0 ml-2 w-64 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 overflow-hidden z-50">
-                              <div className="p-3 border-b border-slate-700 bg-slate-900/50">
-                                  <span className="text-xs font-bold text-white uppercase tracking-wide">Selecionar Obra</span>
-                              </div>
-                              <div className="max-h-[60vh] overflow-y-auto custom-scroll py-1">
-                                  {activeWorks.length > 0 ? activeWorks.map(w => (
-                                      <button 
-                                          key={w.id} 
-                                          onClick={() => navigateTo('RESUMO', w.id)} 
-                                          className={`w-full text-left px-4 py-3 text-sm hover:bg-slate-700 transition-colors border-l-2 ${activeWorkId === w.id ? 'border-pms-500 bg-slate-700 text-white' : 'border-transparent text-slate-300'}`}
-                                      >
-                                          <span className="block font-bold truncate">{w.name}</span>
-                                          <span className="text-[10px] text-slate-500 block truncate">{w.address}</span>
-                                      </button>
-                                  )) : (
-                                      <div className="p-4 text-center text-xs text-slate-500">Nenhuma obra ativa.</div>
-                                  )}
-                              </div>
-                              <div className="p-2 border-t border-slate-700 bg-slate-900/50">
-                                  <button onClick={() => setIsEditWorkModalOpen(true)} className="w-full py-2 text-xs font-bold text-pms-400 hover:text-white flex items-center justify-center gap-2 rounded hover:bg-slate-700">
-                                      <Plus size={12}/> Criar Nova Obra
-                                  </button>
-                              </div>
+                      {/* Active Works Accordion Header */}
+                      <button 
+                          onClick={() => setIsWorksExpanded(!isWorksExpanded)}
+                          className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
+                      >
+                          <div className="flex items-center gap-3">
+                              <HardHat size={18} className="text-pms-500"/>
+                              <span>Obras em Andamento</span>
                           </div>
-                      </div>
+                          {isWorksExpanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                      </button>
+
+                      {/* Active Works List (Expandable) */}
+                      {isWorksExpanded && (
+                          <div className="pl-9 pr-1 space-y-1 animate-in slide-in-from-top-2 duration-200">
+                              {activeWorks.length > 0 ? activeWorks.map(w => (
+                                  <button 
+                                      key={w.id} 
+                                      onClick={() => navigateTo('RESUMO', w.id)} 
+                                      className={`w-full text-left px-3 py-2 text-xs rounded-md flex items-center gap-2 transition-colors ${
+                                          activeWorkId === w.id 
+                                          ? 'bg-slate-800 text-white border-l-2 border-pms-500' 
+                                          : 'text-slate-400 hover:text-white hover:bg-slate-800/50 border-l-2 border-transparent'
+                                      }`}
+                                  >
+                                      <Circle size={6} className={activeWorkId === w.id ? 'fill-pms-500 text-pms-500' : 'text-slate-600'} />
+                                      <span className="truncate">{w.name}</span>
+                                  </button>
+                              )) : (
+                                  <div className="text-xs text-slate-500 py-2 italic pl-2">Nenhuma obra ativa.</div>
+                              )}
+                              
+                              <button 
+                                  onClick={() => setIsEditWorkModalOpen(true)}
+                                  className="w-full text-left px-3 py-2 text-xs text-pms-500 hover:text-pms-400 font-bold flex items-center gap-2 mt-1"
+                              >
+                                  <Plus size={12}/> Criar Nova Obra
+                              </button>
+                          </div>
+                      )}
 
                       {/* INACTIVE WORKS LINK */}
                       <SidebarItem 
@@ -226,12 +232,172 @@ function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto custom-scroll w-full">
-            {currentView === 'DASHBOARD' && <div className="p-8"><Dashboard works={works} finance={finance} inventory={inventory} rentals={rentals}/></div>}
+            {currentView === 'DASHBOARD' && <div className="p-8"><Dashboard works={works} finance={finance} inventory={inventory} rentals={rentals} onNavigate={(view) => navigateTo(view)}/></div>}
+            
+            {/* GLOBAL FINANCE (DEFAULT) */}
             {currentView === 'GLOBAL_FINANCE' && <div className="p-8"><FinanceView records={finance} currentUser={currentUser} users={users} onAddRecord={api.createFinance} onUpdateRecord={api.updateFinance} onDeleteRecord={api.deleteFinance} financeCategories={financeCategories}/></div>}
+            
+            {/* FINANCE - DEEP LINKS FROM DASHBOARD */}
+            {currentView === 'FINANCE_PAYABLES' && (
+                <div className="p-8">
+                    <FinanceView 
+                        records={finance} 
+                        currentUser={currentUser} users={users} 
+                        onAddRecord={api.createFinance} onUpdateRecord={api.updateFinance} onDeleteRecord={api.deleteFinance} 
+                        financeCategories={financeCategories}
+                        initialType={FinanceType.EXPENSE}
+                        initialStatus="Pendente"
+                    />
+                </div>
+            )}
+            {currentView === 'FINANCE_RECEIVABLES' && (
+                <div className="p-8">
+                    <FinanceView 
+                        records={finance} 
+                        currentUser={currentUser} users={users} 
+                        onAddRecord={api.createFinance} onUpdateRecord={api.updateFinance} onDeleteRecord={api.deleteFinance} 
+                        financeCategories={financeCategories}
+                        initialType={FinanceType.INCOME}
+                        initialStatus="Pendente"
+                    />
+                </div>
+            )}
+
             {currentView === 'INVENTORY' && <div className="p-8"><InventoryManager inventory={inventory} works={works} users={users} onAdd={api.createInventoryItem} onUpdate={api.updateInventoryItem} onDelete={api.deleteInventoryItem} /></div>}
             {currentView === 'TEAM' && <div className="p-8"><UserManagement currentUser={currentUser} users={users} materials={materials} orders={orders} taskStatuses={DEFAULT_TASK_STATUSES} financeCategories={financeCategories} permissions={DEFAULT_ROLE_PERMISSIONS} onAddUser={api.createUser} onUpdateUser={api.updateUser} onDeleteUser={api.deleteUser} onUpdateStatuses={()=>{}} onAddMaterial={api.createMaterial} onUpdateMaterial={api.updateMaterial} onDeleteMaterial={api.deleteMaterial} onAddCategory={api.createCategory} onUpdateCategory={api.updateCategory} onDeleteCategory={api.deleteCategory} onUpdatePermissions={()=>{}} /></div>}
 
-            {/* --- NEW VIEW: WORKS ARCHIVE --- */}
+            {/* --- NEW VIEW: WORKS ACTIVE (GRID) --- */}
+            {currentView === 'WORKS_ACTIVE' && (
+                <div className="p-8 animate-fade-in">
+                    <div className="flex justify-between items-center mb-8">
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                                <HardHat className="text-pms-600" /> Obras em Andamento
+                            </h2>
+                            <p className="text-slate-500">Visão geral dos projetos ativos.</p>
+                        </div>
+                        <button onClick={() => setIsEditWorkModalOpen(true)} className="bg-pms-600 hover:bg-pms-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all font-bold text-sm">
+                            <Plus size={18} /> Nova Obra
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {activeWorks.map(w => (
+                            <div key={w.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group hover:shadow-lg transition-all hover:-translate-y-1">
+                                <div className="h-48 bg-slate-200 relative cursor-pointer" onClick={() => navigateTo('RESUMO', w.id)}>
+                                    <img src={w.imageUrl || 'https://via.placeholder.com/400x200'} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                    <div className="absolute top-3 right-3">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase shadow-sm ${
+                                            w.status === WorkStatus.EXECUTION ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                                        }`}>
+                                            {w.status}
+                                        </span>
+                                    </div>
+                                    <div className="absolute bottom-0 left-0 w-full h-1 bg-slate-200">
+                                        <div className="h-full bg-pms-500" style={{width: `${w.progress}%`}}></div>
+                                    </div>
+                                </div>
+                                <div className="p-5">
+                                    <h3 className="font-bold text-lg text-slate-800 mb-1 cursor-pointer hover:text-pms-600" onClick={() => navigateTo('RESUMO', w.id)}>{w.name}</h3>
+                                    <p className="text-xs text-slate-500 mb-4 flex items-center gap-1"><CalendarCheck size={12}/> Início: {w.startDate ? new Date(w.startDate).toLocaleDateString('pt-BR') : '-'}</p>
+                                    
+                                    <div className="grid grid-cols-2 gap-4 text-sm mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                        <div>
+                                            <span className="block text-[10px] text-slate-400 font-bold uppercase">Orçamento</span>
+                                            <span className="font-bold text-slate-700">R$ {w.budget.toLocaleString('pt-BR', {compactDisplay:'short', notation:'compact'})}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-[10px] text-slate-400 font-bold uppercase">Progresso</span>
+                                            <span className="font-bold text-pms-600">{w.progress}%</span>
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        onClick={() => navigateTo('RESUMO', w.id)}
+                                        className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-colors"
+                                    >
+                                        Acessar Painel <ArrowRight size={16}/>
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                        {activeWorks.length === 0 && (
+                            <div className="col-span-full py-12 text-center text-slate-400 bg-white rounded-xl border border-slate-200 border-dashed">
+                                <HardHat size={48} className="mx-auto mb-3 opacity-20" />
+                                <p>Nenhuma obra ativa no momento. Inicie um novo projeto!</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* --- NEW VIEW: GLOBAL ISSUES --- */}
+            {currentView === 'GLOBAL_ISSUES' && (
+                <div className="p-8 animate-fade-in">
+                    <div className="flex justify-between items-center mb-8">
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                                <Siren className="text-red-600" /> Central de Intercorrências
+                            </h2>
+                            <p className="text-slate-500">Monitoramento global de problemas e alertas em aberto.</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {logs.filter(l => l.type === 'Intercorrência' && !l.isResolved).length > 0 ? (
+                            logs.filter(l => l.type === 'Intercorrência' && !l.isResolved).map(log => {
+                                const work = works.find(w => w.id === log.workId);
+                                const author = users.find(u => u.id === log.authorId);
+                                return (
+                                    <div key={log.id} className="bg-white p-5 rounded-xl border-l-4 border-l-red-500 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:shadow-md transition-all">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
+                                                    log.severity === 'Crítica' ? 'bg-red-100 text-red-700 border-red-200 animate-pulse' : 
+                                                    log.severity === 'Alta' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                    'bg-yellow-100 text-yellow-700 border-yellow-200'
+                                                }`}>
+                                                    {log.severity || 'Média'}
+                                                </span>
+                                                <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                                                    <Calendar size={12}/> {new Date(log.date).toLocaleDateString('pt-BR')}
+                                                </span>
+                                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                                    {work?.name || 'Obra Desconhecida'}
+                                                </span>
+                                            </div>
+                                            <h3 className="font-bold text-slate-800 text-lg">{log.issueCategory || 'Intercorrência Geral'}</h3>
+                                            <p className="text-sm text-slate-600 mt-1 line-clamp-2">{log.content}</p>
+                                            {author && <p className="text-xs text-slate-400 mt-2">Reportado por: {author.name}</p>}
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-3 md:border-l md:pl-4 md:border-slate-100">
+                                            <button 
+                                                onClick={() => {
+                                                    // Navigate to specific work LOGS tab
+                                                    setCurrentView('LOGS');
+                                                    setActiveWorkId(log.workId);
+                                                }}
+                                                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold text-sm flex items-center gap-2 transition-colors whitespace-nowrap"
+                                            >
+                                                Ver na Obra <ArrowRight size={16}/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="py-20 text-center bg-green-50 rounded-xl border border-green-200 text-green-800">
+                                <ShieldCheck size={48} className="mx-auto mb-3 opacity-30" />
+                                <h3 className="text-xl font-bold">Tudo Certo!</h3>
+                                <p>Nenhuma intercorrência pendente no momento.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* --- EXISTING VIEWS --- */}
             {currentView === 'WORKS_ARCHIVE' && (
                 <div className="p-8 animate-fade-in">
                     <div className="flex justify-between items-center mb-8">

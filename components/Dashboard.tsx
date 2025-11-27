@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { 
   Briefcase, 
@@ -13,7 +14,10 @@ import {
   CheckCircle2,
   BellRing,
   Truck,
-  Building2
+  Building2,
+  ArrowRightCircle,
+  ArrowDownCircle,
+  ArrowUpCircle
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -37,9 +41,10 @@ const PIE_COLORS = ['#c59d45', '#f97316', '#8b5cf6', '#10b981', '#f43f5e', '#eab
 interface KPIState {
   activeWorks: number;
   pendingExpense: number;
+  pendingIncome: number; // NEW
   cashBalance: number;
   activeAlerts: number;
-  totalAssets: number; // New KPI
+  totalAssets: number;
 }
 
 interface ChartData {
@@ -52,7 +57,7 @@ interface DashboardProps {
   finance: FinancialRecord[];
   orders?: MaterialOrder[];
   rentals?: RentalItem[]; 
-  inventory?: InventoryItem[]; // Added Inventory prop
+  inventory?: InventoryItem[];
   onNavigate?: (view: string) => void; 
 }
 
@@ -76,6 +81,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [kpis, setKpis] = useState<KPIState>({
     activeWorks: 0,
     pendingExpense: 0,
+    pendingIncome: 0,
     cashBalance: 0,
     activeAlerts: 0,
     totalAssets: 0
@@ -121,6 +127,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       const pendingExpenseTotal = currentFinance
         .filter(f => f.type === FinanceType.EXPENSE && f.status === 'Pendente')
+        .reduce((acc, curr) => acc + curr.amount, 0);
+
+      const pendingIncomeTotal = currentFinance
+        .filter(f => f.type === FinanceType.INCOME && f.status === 'Pendente')
         .reduce((acc, curr) => acc + curr.amount, 0);
 
       const totalIncome = currentFinance
@@ -203,6 +213,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setKpis({
         activeWorks: activeWorksCount,
         pendingExpense: pendingExpenseTotal,
+        pendingIncome: pendingIncomeTotal,
         cashBalance: cash,
         activeAlerts: alertsCount,
         totalAssets: equipmentVal + realEstateEquity
@@ -248,19 +259,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* ASSETS SUMMARY CARD (New Feature) */}
+      {/* ASSETS SUMMARY CARD */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl p-6 shadow-lg text-white relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
-          <div className="flex flex-col md:flex-row justify-between items-center relative z-10">
-              <div className="mb-4 md:mb-0 text-center md:text-left">
-                  <h3 className="text-pms-300 text-sm font-bold uppercase tracking-wider mb-1 flex items-center justify-center md:justify-start gap-2">
+          <div className="flex flex-col lg:flex-row justify-between items-center relative z-10 gap-6">
+              <div className="mb-4 lg:mb-0 text-center lg:text-left flex-1">
+                  <h3 className="text-pms-300 text-sm font-bold uppercase tracking-wider mb-1 flex items-center justify-center lg:justify-start gap-2">
                       <Building2 size={16} /> Patrimônio & Ativos
                   </h3>
                   <p className="text-3xl font-bold">R$ {kpis.totalAssets.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                  <p className="text-xs text-slate-400 mt-1">Valor total acumulado (Pago/Quitado)</p>
+                  <p className="text-xs text-slate-400 mt-1">Valor total de ativos imobilizados (Pago/Quitado)</p>
               </div>
               
-              <div className="flex gap-6 text-sm">
+              {/* Asset Breakdown + Cash Balance */}
+              <div className="flex flex-wrap justify-center gap-6 text-sm">
                   <div className="text-right">
                       <span className="text-slate-400 block text-xs uppercase font-bold">Imóveis (Equity)</span>
                       <span className="font-bold text-white text-lg">R$ {assetBreakdown.realEstate.toLocaleString('pt-BR', { notation: 'compact' })}</span>
@@ -269,11 +281,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       <span className="text-slate-400 block text-xs uppercase font-bold">Maquinário</span>
                       <span className="font-bold text-white text-lg">R$ {assetBreakdown.equipment.toLocaleString('pt-BR', { notation: 'compact' })}</span>
                   </div>
+                  {/* CASH BALANCE MOVED HERE */}
+                  <div className="text-right border-l border-slate-600 pl-6">
+                      <span className={`block text-xs uppercase font-bold ${kpis.cashBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>Saldo em Conta</span>
+                      <span className={`font-bold text-lg ${kpis.cashBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          R$ {kpis.cashBalance.toLocaleString('pt-BR', { notation: 'compact' })}
+                      </span>
+                  </div>
               </div>
           </div>
       </div>
 
-      {/* ALERTS SECTION (Expiring Rentals) */}
+      {/* ALERTS SECTION */}
       {expiringRentals.length > 0 && (
           <div className="bg-red-50 border border-red-100 rounded-xl p-4 animate-in fade-in slide-in-from-top-2">
               <h3 className="text-red-800 font-bold flex items-center gap-2 mb-3">
@@ -302,9 +321,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-blue-300 transition-colors">
+        {/* ACTIVE WORKS CARD */}
+        <div 
+            onClick={() => onNavigate && onNavigate('WORKS_ACTIVE')}
+            className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-blue-400 cursor-pointer transition-all hover:shadow-md"
+        >
           <div>
-            <p className="text-sm font-bold text-slate-500">Obras Ativas</p>
+            <p className="text-sm font-bold text-slate-500 group-hover:text-blue-600 transition-colors">Obras Ativas</p>
             <p className="text-3xl font-bold text-slate-800 mt-1">{kpis.activeWorks}</p>
           </div>
           <div className="p-4 bg-blue-50 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
@@ -312,41 +335,58 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-orange-300 transition-colors">
+        {/* PENDING EXPENSES (A PAGAR) */}
+        <div 
+            onClick={() => onNavigate && onNavigate('FINANCE_PAYABLES')}
+            className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-orange-300 cursor-pointer transition-all hover:shadow-md"
+        >
           <div>
-            <p className="text-sm font-bold text-slate-500">A Pagar (Pendente)</p>
+            <p className="text-sm font-bold text-slate-500 group-hover:text-orange-600 transition-colors flex items-center gap-1">
+                A Pagar (Pendente) <ArrowRightCircle size={12}/>
+            </p>
             <p className="text-3xl font-bold text-slate-800 mt-1">
               R$ {kpis.pendingExpense.toLocaleString('pt-BR', { notation: 'compact' })}
             </p>
           </div>
           <div className="p-4 bg-orange-50 text-orange-600 rounded-lg group-hover:bg-orange-600 group-hover:text-white transition-colors">
-            <DollarSign size={24} />
+            <ArrowDownCircle size={24} />
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-emerald-300 transition-colors">
+        {/* PENDING INCOME (A RECEBER) - Was Cash Balance */}
+        <div 
+            onClick={() => onNavigate && onNavigate('FINANCE_RECEIVABLES')}
+            className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-emerald-300 cursor-pointer transition-all hover:shadow-md"
+        >
           <div>
-            <p className="text-sm font-bold text-slate-500">Caixa (Realizado)</p>
-            <p className={`text-3xl font-bold mt-1 ${kpis.cashBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-               R$ {kpis.cashBalance.toLocaleString('pt-BR', { notation: 'compact' })}
+            <p className="text-sm font-bold text-slate-500 group-hover:text-emerald-600 transition-colors flex items-center gap-1">
+                A Receber (Pendente) <ArrowRightCircle size={12}/>
+            </p>
+            <p className="text-3xl font-bold text-emerald-600 mt-1">
+               R$ {kpis.pendingIncome.toLocaleString('pt-BR', { notation: 'compact' })}
             </p>
           </div>
-          <div className={`p-4 rounded-lg transition-colors ${kpis.cashBalance >= 0 ? 'bg-emerald-50 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white'}`}>
-            <Wallet size={24} />
+          <div className="p-4 bg-emerald-50 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+            <ArrowUpCircle size={24} />
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between group hover:border-red-300 transition-colors">
+        {/* ISSUES CARD */}
+        <div 
+            onClick={() => onNavigate && onNavigate('GLOBAL_ISSUES')}
+            className={`bg-white p-6 rounded-xl shadow-sm border flex items-center justify-between group cursor-pointer transition-all hover:shadow-md ${kpis.activeAlerts > 0 ? 'border-red-200 hover:border-red-400' : 'border-slate-200 hover:border-green-400'}`}
+        >
           <div>
-            <p className="text-sm font-bold text-slate-500">Intercorrências</p>
-            <p className="text-3xl font-bold text-red-600 mt-1">{kpis.activeAlerts}</p>
+            <p className={`text-sm font-bold ${kpis.activeAlerts > 0 ? 'text-red-500 group-hover:text-red-600' : 'text-slate-500 group-hover:text-green-600'}`}>Intercorrências</p>
+            <p className={`text-3xl font-bold mt-1 ${kpis.activeAlerts > 0 ? 'text-red-600' : 'text-slate-800'}`}>{kpis.activeAlerts}</p>
           </div>
-          <div className={`p-4 rounded-lg transition-colors ${kpis.activeAlerts > 0 ? 'bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white' : 'bg-green-50 text-green-600'}`}>
+          <div className={`p-4 rounded-lg transition-colors ${kpis.activeAlerts > 0 ? 'bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white animate-pulse' : 'bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white'}`}>
             <AlertTriangle size={24} />
           </div>
         </div>
       </div>
 
+      {/* CHARTS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-[400px]">
           <h3 className="font-bold text-slate-800 mb-6">Maiores Custos por Obra</h3>

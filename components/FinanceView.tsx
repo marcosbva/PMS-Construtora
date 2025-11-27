@@ -1,9 +1,8 @@
 
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { FinancialRecord, FinanceType, User, ConstructionWork, FinanceCategoryDefinition, WorkBudget, FinancialItemBreakdown, MaterialOrder, OrderStatus, TaskPriority } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { DollarSign, TrendingDown, TrendingUp, X, Calendar, FileText, Edit2, Trash2, Plus, ShoppingCart, Ruler, ArrowRight, Wallet, AlertCircle, PieChart as PieIcon, List } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, X, Calendar, FileText, Edit2, Trash2, Plus, ShoppingCart, Ruler, ArrowRight, Wallet, AlertCircle, PieChart as PieIcon, List, CheckCircle2 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface FinanceViewProps {
@@ -16,6 +15,9 @@ interface FinanceViewProps {
   onUpdateRecord?: (record: FinancialRecord) => void;
   onDeleteRecord?: (recordId: string) => void;
   onAddCategory?: (category: FinanceCategoryDefinition) => void;
+  // NEW PROPS FOR DEEP LINKING
+  initialType?: FinanceType;
+  initialStatus?: string; 
 }
 
 // Gold & Modern Palette
@@ -23,11 +25,16 @@ const COLORS = ['#c59d45', '#64748b', '#ef4444', '#10b981'];
 
 export const FinanceView: React.FC<FinanceViewProps> = ({ 
     records, currentUser, users, work, financeCategories = [],
-    onAddRecord, onUpdateRecord, onDeleteRecord, onAddCategory 
+    onAddRecord, onUpdateRecord, onDeleteRecord, onAddCategory,
+    initialType, initialStatus
 }) => {
   const isGlobal = !work;
   const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'BUDGET_CONTROL' | 'TRANSACTIONS'>('DASHBOARD');
   
+  // Local Filter State for Transactions Tab
+  const [filterType, setFilterType] = useState<FinanceType | 'ALL'>('ALL');
+  const [filterStatus, setFilterStatus] = useState<string>('ALL');
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -53,6 +60,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   useEffect(() => {
     if (work?.id) api.getBudget(work.id).then(setWorkBudget).catch(console.error);
   }, [work?.id]);
+
+  // Handle Initial Filters (Deep Linking)
+  useEffect(() => {
+      if (initialType) {
+          setFilterType(initialType);
+          setActiveTab('TRANSACTIONS'); // Switch to list view to show results
+      }
+      if (initialStatus) {
+          setFilterStatus(initialStatus);
+          setActiveTab('TRANSACTIONS');
+      }
+  }, [initialType, initialStatus]);
 
   // --- CALCULATIONS ---
 
@@ -100,6 +119,15 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       }));
   }, [budgetControl]);
 
+  // 4. Filtered Records for Table
+  const filteredRecords = useMemo(() => {
+      return records.filter(rec => {
+          const matchType = filterType === 'ALL' || rec.type === filterType;
+          const matchStatus = filterStatus === 'ALL' || rec.status === filterStatus;
+          return matchType && matchStatus;
+      }).sort((a,b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());
+  }, [records, filterType, filterStatus]);
+
 
   // --- HANDLERS ---
 
@@ -114,6 +142,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         setShowItems(false);
     }
     setIsModalOpen(true);
+  };
+
+  const handleQuickPay = (record: FinancialRecord) => {
+      if (onUpdateRecord && window.confirm(`Confirmar o pagamento de: ${record.description}?`)) {
+          onUpdateRecord({
+              ...record,
+              status: 'Pago',
+              paidDate: new Date().toISOString().split('T')[0]
+          });
+      }
   };
 
   const handleItemChange = (index: number, field: keyof FinancialItemBreakdown, value: any) => {
@@ -338,6 +376,29 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       {/* --- TRANSACTIONS TAB (Original List) --- */}
       {activeTab === 'TRANSACTIONS' && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              {/* FILTERS TOOLBAR */}
+              <div className="p-4 border-b border-slate-100 flex gap-2 bg-slate-50">
+                  <select 
+                    className="bg-white border rounded px-2 py-1 text-sm text-slate-700"
+                    value={filterType}
+                    onChange={e => setFilterType(e.target.value as any)}
+                  >
+                      <option value="ALL">Todas Operações</option>
+                      <option value="Pagar">Despesas</option>
+                      <option value="Receber">Receitas</option>
+                  </select>
+                  <select 
+                    className="bg-white border rounded px-2 py-1 text-sm text-slate-700"
+                    value={filterStatus}
+                    onChange={e => setFilterStatus(e.target.value)}
+                  >
+                      <option value="ALL">Todos Status</option>
+                      <option value="Pendente">Pendentes</option>
+                      <option value="Pago">Pagos</option>
+                      <option value="Atrasado">Atrasados</option>
+                  </select>
+              </div>
+
               <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
                       <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
@@ -351,9 +412,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                          {records
-                              .sort((a,b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())
-                              .map(rec => (
+                          {filteredRecords.map(rec => (
                               <tr key={rec.id} className="hover:bg-slate-50">
                                   <td className="px-6 py-4 text-slate-600">{new Date(rec.dueDate).toLocaleDateString('pt-BR')}</td>
                                   <td className="px-6 py-4">
@@ -385,11 +444,23 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                                       </span>
                                   </td>
                                   <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                      {rec.status !== 'Pago' && (
+                                          <button 
+                                            onClick={() => handleQuickPay(rec)}
+                                            className="p-1.5 text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 rounded transition-colors"
+                                            title="Dar Baixa (Pagar)"
+                                          >
+                                              <CheckCircle2 size={16}/>
+                                          </button>
+                                      )}
                                       <button onClick={() => handleOpenModal(rec)} className="p-1.5 text-slate-400 hover:text-pms-600 bg-slate-100 rounded transition-colors"><Edit2 size={16}/></button>
                                       <button onClick={() => onDeleteRecord && onDeleteRecord(rec.id)} className="p-1.5 text-slate-400 hover:text-red-600 bg-slate-100 rounded transition-colors"><Trash2 size={16}/></button>
                                   </td>
                               </tr>
                           ))}
+                          {filteredRecords.length === 0 && (
+                              <tr><td colSpan={6} className="text-center p-8 text-slate-400">Nenhum registro encontrado com estes filtros.</td></tr>
+                          )}
                       </tbody>
                   </table>
               </div>

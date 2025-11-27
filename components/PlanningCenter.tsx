@@ -1,14 +1,13 @@
 
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ConstructionWork, WorkBudget, BudgetCategory, Task, TaskStatus } from '../types';
 import { api } from '../services/api';
 import { generateBudgetStructure } from '../services/geminiService';
-import { Calendar, DollarSign, Plus, Save, ChevronDown, ChevronRight, BrainCircuit, Trash2, Clock, CheckCircle2, Circle, Loader2, ArrowRight } from 'lucide-react';
+import { Calendar, DollarSign, Plus, Save, ChevronDown, ChevronRight, BrainCircuit, Trash2, Clock, CheckCircle2, Circle, Loader2, ArrowRight, BarChart3, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface PlanningCenterProps {
     work: ConstructionWork;
-    tasks: Task[]; // Need tasks to calculate real progress of stages
+    tasks: Task[]; // Need tasks to count items
     onUpdateWork: (work: ConstructionWork) => void;
 }
 
@@ -31,7 +30,6 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
                 if (b) {
                     setBudget(b);
                 } else {
-                    // Initialize empty budget/schedule
                     setBudget({
                         id: work.id,
                         workId: work.id,
@@ -54,8 +52,6 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
         setIsSaving(true);
         try {
             await api.saveBudget(budget);
-            
-            // Also update work budget total
             if (budget.totalValue !== work.budget) {
                 onUpdateWork({ ...work, budget: budget.totalValue });
             }
@@ -107,7 +103,8 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
             name: 'Nova Etapa Macro',
             items: [],
             categoryTotal: 0,
-            status: 'PENDING'
+            status: 'PENDING',
+            progress: 0
         };
         setBudget({ ...budget, categories: [...budget.categories, newStage] });
         setExpandedRows(prev => ({ ...prev, [newStage.id]: true }));
@@ -132,6 +129,13 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
         setBudget({ ...budget, categories: newCats });
     };
 
+    const removeStage = (stageId: string) => {
+        if (!budget || !window.confirm("Remover esta etapa e todos os seus itens?")) return;
+        const newCats = budget.categories.filter(c => c.id !== stageId);
+        const total = newCats.reduce((acc, c) => acc + c.categoryTotal, 0);
+        setBudget({ ...budget, categories: newCats, totalValue: total });
+    };
+
     const handleAiGenerate = async () => {
         if (!aiScope) return;
         setIsGenerating(true);
@@ -153,13 +157,19 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
         }
     };
 
-    // Calculate Progress per Stage based on Tasks linked to it
-    const getStageProgress = (stageId: string) => {
-        const stageTasks = tasks.filter(t => t.stageId === stageId);
-        if (stageTasks.length === 0) return 0;
+    // Calculate Stats
+    const getStageStats = (stage: BudgetCategory) => {
+        const stageTasks = tasks.filter(t => t.stageId === stage.id);
+        const totalTasks = stageTasks.length;
         
-        const completed = stageTasks.filter(t => t.status === TaskStatus.DONE).length;
-        return Math.round((completed / stageTasks.length) * 100);
+        // Use stored progress as source of truth
+        const realProgress = stage.progress || 0;
+        
+        // Weight Calculation (Representativity in Total Budget)
+        const totalBudget = budget?.totalValue || 1;
+        const weight = (stage.categoryTotal / totalBudget) * 100;
+
+        return { realProgress, weight, taskCount: totalTasks };
     };
 
     if (isLoading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pms-600"/></div>;
@@ -167,88 +177,135 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
     return (
         <div className="space-y-6 pb-20">
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 rounded-xl shadow-lg text-white flex flex-col md:flex-row justify-between items-center gap-4">
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Calendar className="text-pms-600"/> Planejamento Integrado
+                    <h2 className="text-2xl font-bold flex items-center gap-2">
+                        <BarChart3 className="text-pms-400"/> Planejamento Físico-Financeiro
                     </h2>
-                    <p className="text-slate-500">Defina o Orçamento (Escopo) e o Cronograma (Prazo) em um só lugar.</p>
+                    <p className="text-slate-400 text-sm">Defina o orçamento base e o cronograma macro. O progresso físico é alimentado pelas tarefas de campo.</p>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setIsAiModalOpen(true)} className="px-4 py-2 bg-purple-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-purple-500 transition-colors">
-                        <BrainCircuit size={18}/> IA: Gerar Estrutura
-                    </button>
-                    <button onClick={handleSave} disabled={isSaving} className="px-6 py-2 bg-green-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-green-500 transition-colors disabled:opacity-50">
-                        {isSaving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} Salvar
-                    </button>
+                <div className="text-right bg-white/10 p-3 rounded-lg border border-white/10">
+                    <p className="text-xs text-slate-400 uppercase font-bold">Orçamento Total</p>
+                    <p className="text-2xl font-bold text-pms-400">R$ {budget?.totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
                 </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+                <button onClick={() => setIsAiModalOpen(true)} className="px-4 py-2 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-lg font-bold flex items-center gap-2 transition-colors border border-purple-200">
+                    <BrainCircuit size={18}/> IA: Gerar EAP
+                </button>
+                <button onClick={handleSave} disabled={isSaving} className="px-6 py-2 bg-pms-600 text-white rounded-lg font-bold flex items-center gap-2 hover:bg-pms-500 transition-colors disabled:opacity-50 shadow-md">
+                    {isSaving ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} Salvar Planejamento
+                </button>
             </div>
 
             {/* Main Table */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="bg-slate-100 p-4 border-b border-slate-200 grid grid-cols-12 gap-4 font-bold text-slate-600 text-xs uppercase">
-                    <div className="col-span-4">Etapa Macro (Pacote de Trabalho)</div>
+                <div className="bg-slate-100 p-3 border-b border-slate-200 grid grid-cols-12 gap-2 font-bold text-slate-600 text-[10px] uppercase tracking-wider items-center">
+                    <div className="col-span-4 pl-8">Etapa (Pacote de Trabalho)</div>
                     <div className="col-span-2 text-right">Orçamento (R$)</div>
-                    <div className="col-span-2 text-center">Início</div>
-                    <div className="col-span-2 text-center">Fim</div>
-                    <div className="col-span-2 text-center">Progresso Real</div>
+                    <div className="col-span-1 text-center">Peso (%)</div>
+                    <div className="col-span-2 text-center">Cronograma</div>
+                    <div className="col-span-2 text-center">Avanço Físico Real</div>
+                    <div className="col-span-1"></div>
                 </div>
 
                 <div className="divide-y divide-slate-100">
                     {budget?.categories.map(stage => {
-                        const progress = getStageProgress(stage.id);
+                        const { realProgress, weight, taskCount } = getStageStats(stage);
                         const isExpanded = expandedRows[stage.id];
 
                         return (
-                            <div key={stage.id} className="group">
+                            <div key={stage.id} className="group bg-white hover:bg-slate-50 transition-colors">
                                 {/* Macro Row */}
-                                <div className="p-3 grid grid-cols-12 gap-4 items-center hover:bg-slate-50 transition-colors">
+                                <div className="p-3 grid grid-cols-12 gap-2 items-center">
                                     <div className="col-span-4 flex items-center gap-2">
-                                        <button onClick={() => setExpandedRows(prev => ({...prev, [stage.id]: !prev[stage.id]}))}>
-                                            {isExpanded ? <ChevronDown size={16} className="text-slate-400"/> : <ChevronRight size={16} className="text-slate-400"/>}
+                                        <button 
+                                            onClick={() => setExpandedRows(prev => ({...prev, [stage.id]: !prev[stage.id]}))}
+                                            className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-colors"
+                                        >
+                                            {isExpanded ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}
                                         </button>
                                         <input 
-                                            className="w-full font-bold text-slate-800 bg-transparent outline-none focus:bg-white focus:ring-1 focus:ring-pms-300 rounded px-1"
+                                            className="w-full font-bold text-slate-800 bg-transparent outline-none border-b border-transparent focus:border-pms-300 focus:bg-white transition-all text-sm"
                                             value={stage.name}
                                             onChange={(e) => updateStage(stage.id, 'name', e.target.value)}
+                                            placeholder="Nome da Etapa"
                                         />
                                     </div>
-                                    <div className="col-span-2 text-right font-bold text-slate-700">
+                                    <div className="col-span-2 text-right font-medium text-slate-700 text-sm">
                                         R$ {stage.categoryTotal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
                                     </div>
-                                    <div className="col-span-2">
+                                    <div className="col-span-1 text-center">
+                                        <span className="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200">
+                                            {weight.toFixed(1)}%
+                                        </span>
+                                    </div>
+                                    <div className="col-span-2 flex gap-1">
                                         <input 
                                             type="date" 
-                                            className="w-full text-xs border rounded p-1 text-slate-600"
+                                            className="w-full text-[10px] border border-slate-200 rounded p-1 text-slate-600 bg-white"
                                             value={stage.startDate || ''}
                                             onChange={(e) => updateStage(stage.id, 'startDate', e.target.value)}
                                         />
-                                    </div>
-                                    <div className="col-span-2">
                                         <input 
                                             type="date" 
-                                            className="w-full text-xs border rounded p-1 text-slate-600"
+                                            className="w-full text-[10px] border border-slate-200 rounded p-1 text-slate-600 bg-white"
                                             value={stage.endDate || ''}
                                             onChange={(e) => updateStage(stage.id, 'endDate', e.target.value)}
                                         />
                                     </div>
-                                    <div className="col-span-2 flex flex-col items-center">
-                                        <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                                            <div className="h-full bg-green-500" style={{width: `${progress}%`}}></div>
+                                    
+                                    {/* PHYSICAL PROGRESS (EDITABLE) */}
+                                    <div className="col-span-2 px-2">
+                                        <div className="flex justify-between text-[10px] mb-1">
+                                            <span className="text-slate-400" title="Tarefas vinculadas">{taskCount} tarefas</span>
+                                            <input 
+                                                type="number" 
+                                                min="0" max="100"
+                                                className={`w-12 text-right font-bold bg-transparent border-b border-slate-300 focus:border-pms-500 outline-none ${realProgress === 100 ? 'text-green-600' : 'text-slate-700'}`}
+                                                value={realProgress}
+                                                onChange={(e) => updateStage(stage.id, 'progress', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                                            />
                                         </div>
-                                        <span className="text-[10px] font-bold text-slate-500 mt-1">{progress}% Concluído</span>
+                                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden relative group/prog">
+                                            <div className={`h-full ${realProgress === 100 ? 'bg-green-500' : 'bg-pms-500'}`} style={{width: `${realProgress}%`}}></div>
+                                            <input 
+                                                type="range"
+                                                min="0" max="100"
+                                                value={realProgress}
+                                                onChange={(e) => updateStage(stage.id, 'progress', parseInt(e.target.value))}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize"
+                                                title="Arraste para ajustar manualmente"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="col-span-1 text-right">
+                                        <button onClick={() => removeStage(stage.id)} className="text-slate-300 hover:text-red-500 p-1 transition-colors"><Trash2 size={14}/></button>
                                     </div>
                                 </div>
 
                                 {/* Detailed Items (Sub-rows) */}
                                 {isExpanded && (
-                                    <div className="bg-slate-50/50 pl-12 pr-4 py-2 border-t border-slate-100 shadow-inner">
-                                        <div className="mb-2 text-[10px] font-bold text-slate-400 uppercase">Detalhamento de Custo</div>
+                                    <div className="bg-slate-50 pl-10 pr-4 py-3 border-t border-slate-100 shadow-inner">
+                                        <div className="mb-2 text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2">
+                                            <Circle size={8} fill="currentColor"/> Detalhamento de Custos (Composição)
+                                        </div>
+                                        {stage.items.length > 0 && (
+                                            <div className="grid grid-cols-12 gap-2 mb-2 text-[10px] font-bold text-slate-400 border-b border-slate-200 pb-1">
+                                                <div className="col-span-6">Descrição do Item</div>
+                                                <div className="col-span-1 text-center">Un</div>
+                                                <div className="col-span-1 text-center">Qtd</div>
+                                                <div className="col-span-2 text-right">Unitário</div>
+                                                <div className="col-span-2 text-right">Total</div>
+                                            </div>
+                                        )}
+                                        
                                         {stage.items.map(item => (
                                             <div key={item.id} className="grid grid-cols-12 gap-2 mb-2 items-center">
-                                                <div className="col-span-5">
+                                                <div className="col-span-6">
                                                     <input 
-                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1"
+                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 focus:border-pms-300 outline-none"
                                                         value={item.description}
                                                         onChange={(e) => updateItem(stage.id, item.id, 'description', e.target.value)}
                                                         placeholder="Descrição do item"
@@ -256,30 +313,30 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
                                                 </div>
                                                 <div className="col-span-1">
                                                     <input 
-                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1 text-center"
+                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 text-center"
                                                         value={item.unit}
                                                         onChange={(e) => updateItem(stage.id, item.id, 'unit', e.target.value)}
-                                                        placeholder="Un"
                                                     />
                                                 </div>
                                                 <div className="col-span-1">
                                                     <input 
                                                         type="number"
-                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1 text-center"
+                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 text-center font-bold"
                                                         value={item.quantity}
                                                         onChange={(e) => updateItem(stage.id, item.id, 'quantity', e.target.value)}
                                                     />
                                                 </div>
-                                                <div className="col-span-2">
+                                                <div className="col-span-2 relative">
+                                                    <span className="absolute left-1.5 top-1.5 text-[10px] text-slate-400">R$</span>
                                                     <input 
                                                         type="number"
-                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1 text-right"
+                                                        className="w-full text-xs bg-white border border-slate-200 rounded p-1.5 pl-6 text-right"
                                                         value={item.unitPrice}
                                                         onChange={(e) => updateItem(stage.id, item.id, 'unitPrice', e.target.value)}
                                                     />
                                                 </div>
-                                                <div className="col-span-2 text-right text-xs font-bold text-slate-600 p-1">
-                                                    R$ {item.totalPrice.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                                <div className="col-span-1 text-right text-xs font-bold text-slate-600 p-1.5">
+                                                    {item.totalPrice.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
                                                 </div>
                                                 <div className="col-span-1 flex justify-end">
                                                     <button onClick={() => {
@@ -287,11 +344,11 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
                                                         const newTotal = newItems.reduce((acc, i) => acc + i.totalPrice, 0);
                                                         const newCats = budget.categories.map(c => c.id === stage.id ? {...c, items: newItems, categoryTotal: newTotal} : c);
                                                         setBudget({...budget, categories: newCats, totalValue: newCats.reduce((acc, c) => acc + c.categoryTotal, 0)});
-                                                    }} className="text-red-300 hover:text-red-500"><Trash2 size={12}/></button>
+                                                    }} className="text-slate-300 hover:text-red-500"><Trash2 size={12}/></button>
                                                 </div>
                                             </div>
                                         ))}
-                                        <button onClick={() => addItem(stage.id)} className="text-xs font-bold text-pms-600 hover:text-pms-500 flex items-center gap-1 mt-2">
+                                        <button onClick={() => addItem(stage.id)} className="text-xs font-bold text-pms-600 hover:text-pms-500 flex items-center gap-1 mt-3 bg-white border border-pms-200 px-3 py-1.5 rounded-lg shadow-sm transition-all hover:shadow-md">
                                             <Plus size={12}/> Adicionar Item de Custo
                                         </button>
                                     </div>
@@ -302,37 +359,9 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
                 </div>
                 
                 <div className="p-4 bg-slate-50 border-t border-slate-200">
-                    <button onClick={addStage} className="w-full py-2 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 font-bold hover:bg-slate-100 hover:border-slate-400 transition-colors flex items-center justify-center gap-2">
+                    <button onClick={addStage} className="w-full py-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 font-bold hover:bg-white hover:border-pms-400 hover:text-pms-600 transition-all flex items-center justify-center gap-2">
                         <Plus size={18}/> Adicionar Nova Etapa Macro
                     </button>
-                </div>
-            </div>
-
-            {/* Simple Gantt Visualization */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <Clock className="text-orange-500"/> Linha do Tempo (Cronograma Macro)
-                </h3>
-                <div className="space-y-4">
-                    {budget?.categories.filter(c => c.startDate && c.endDate).map(stage => (
-                        <div key={stage.id}>
-                            <div className="flex justify-between text-xs font-bold text-slate-600 mb-1">
-                                <span>{stage.name}</span>
-                                <span>
-                                    {new Date(stage.startDate!).toLocaleDateString('pt-BR')} <ArrowRight size={10} className="inline mx-1"/> {new Date(stage.endDate!).toLocaleDateString('pt-BR')}
-                                </span>
-                            </div>
-                            <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden relative">
-                                {/* This is a visual representation, for a real Gantt we'd need date math for positioning */}
-                                <div className="absolute left-0 top-0 h-full bg-blue-100 w-full">
-                                    <div className="h-full bg-blue-500" style={{width: `${getStageProgress(stage.id)}%`}}></div>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                    {budget?.categories.filter(c => c.startDate && c.endDate).length === 0 && (
-                        <p className="text-center text-slate-400 text-sm">Defina datas de início e fim nas etapas acima para visualizar o cronograma.</p>
-                    )}
                 </div>
             </div>
 

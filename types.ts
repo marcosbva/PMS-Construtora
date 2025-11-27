@@ -232,6 +232,7 @@ export interface MaterialOrder {
   id: string;
   workId: string;
   taskId?: string;
+  budgetCategoryId?: string; // New: Link to Budget Stage
   requesterId: string;
   supplierId?: string;
   itemName: string;
