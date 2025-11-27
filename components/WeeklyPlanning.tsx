@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Task, TaskStatus, TaskPriority, User, WorkBudget, BudgetCategory } from '../types';
 import { api } from '../services/api';
-import { Calendar, CheckSquare, Square, ChevronLeft, ChevronRight, Plus, User as UserIcon, ListChecks, AlertCircle, RefreshCw, X, Link as LinkIcon, AlertTriangle, ArrowRight, Clock, CheckCircle2, Ruler, Minus } from 'lucide-react';
+import { Calendar, CheckSquare, Square, ChevronLeft, ChevronRight, Plus, User as UserIcon, ListChecks, AlertCircle, RefreshCw, X, Link as LinkIcon, AlertTriangle, ArrowRight, Clock, CheckCircle2, Ruler, Minus, Edit2, Save } from 'lucide-react';
 
 interface WeeklyPlanningProps {
   workId: string;
@@ -137,6 +137,9 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
   
   // Measure Modal State
   const [measureModal, setMeasureModal] = useState<{task: Task, stage: BudgetCategory} | null>(null);
+  
+  // Edit Task State
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // Quick Add State
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -297,6 +300,13 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
       }
   };
 
+  const handleSaveEdit = () => {
+      if(editingTask) {
+          onUpdateTask(editingTask);
+          setEditingTask(null);
+      }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50/50 p-6 pb-20 grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
       
@@ -307,6 +317,75 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
               onConfirm={handleMeasureConfirm} 
               onClose={() => setMeasureModal(null)} 
           />
+      )}
+
+      {/* EDIT MODAL */}
+      {editingTask && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl scale-100 animate-in zoom-in-95 duration-200">
+                  <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
+                      <h3 className="text-lg font-bold text-slate-800">Editar Tarefa</h3>
+                      <button onClick={() => setEditingTask(null)}><X size={20} className="text-slate-400"/></button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Título</label>
+                          <input 
+                              type="text" 
+                              className="w-full border rounded-lg p-2 text-sm"
+                              value={editingTask.title} 
+                              onChange={e => setEditingTask({...editingTask, title: e.target.value})}
+                          />
+                      </div>
+                      
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Responsável</label>
+                          <select 
+                              className="w-full border rounded-lg p-2 text-sm bg-white"
+                              value={editingTask.assignedTo || ''}
+                              onChange={e => setEditingTask({...editingTask, assignedTo: e.target.value})}
+                          >
+                              <option value="">Selecione...</option>
+                              {users.filter(u => u.category === 'INTERNAL').map(u => (
+                                  <option key={u.id} value={u.id}>{u.name}</option>
+                              ))}
+                          </select>
+                      </div>
+
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Semana de Planejamento</label>
+                          <input 
+                              type="week" 
+                              className="w-full border rounded-lg p-2 text-sm bg-white"
+                              value={editingTask.planningWeek} 
+                              onChange={e => setEditingTask({...editingTask, planningWeek: e.target.value})}
+                          />
+                      </div>
+
+                      <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Vínculo com Etapa</label>
+                          <select 
+                              className="w-full border rounded-lg p-2 text-sm bg-white"
+                              value={editingTask.stageId || ''}
+                              onChange={e => setEditingTask({...editingTask, stageId: e.target.value})}
+                          >
+                              <option value="">Sem Vínculo</option>
+                              {budget?.categories.map(cat => (
+                                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                              ))}
+                          </select>
+                      </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+                      <button onClick={() => setEditingTask(null)} className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded-lg font-bold text-sm">Cancelar</button>
+                      <button onClick={handleSaveEdit} className="px-4 py-2 bg-pms-600 text-white rounded-lg font-bold text-sm hover:bg-pms-500 flex items-center gap-2">
+                          <Save size={16}/> Salvar Alterações
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* LEFT COLUMN: ACTIVE SCHEDULE (Context) */}
@@ -459,14 +538,24 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
                                       </div>
                                   </div>
 
-                                  <button 
-                                      onClick={() => {
-                                          if(window.confirm("Excluir tarefa?")) onDeleteTask(task.id);
-                                      }}
-                                      className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  >
-                                      <X size={18} />
-                                  </button>
+                                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button 
+                                          onClick={() => setEditingTask(task)}
+                                          className="p-1.5 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                          title="Editar Tarefa"
+                                      >
+                                          <Edit2 size={18} />
+                                      </button>
+                                      <button 
+                                          onClick={() => {
+                                              if(window.confirm("Excluir tarefa?")) onDeleteTask(task.id);
+                                          }}
+                                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                          title="Excluir Tarefa"
+                                      >
+                                          <X size={18} />
+                                      </button>
+                                  </div>
                               </div>
                           );
                       })}
