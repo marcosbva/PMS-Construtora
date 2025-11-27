@@ -1,8 +1,7 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, UserCategory, UserRole, TaskStatusDefinition, Material, MaterialOrder, OrderStatus, FinanceCategoryDefinition, RolePermissionsMap, AppPermissions, DailyLog } from '../types';
-import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck, Phone, Building2, MapPin, Globe, CreditCard, History, ShoppingBag, Search, MessageCircle, Smartphone } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Shield, User as UserIcon, Eye, Briefcase, Check, Settings, Contact, Truck, Users, List, Palette, ArrowUp, ArrowDown, Package, TrendingDown, TrendingUp, Wallet, Tag, Cloud, Database, Save, LogOut, Lock, AlertCircle, UserCheck, Activity, RefreshCw, AlertTriangle, Loader2, Camera, Upload, Link as LinkIcon, CheckSquare, Square, Key, Copy, ShieldCheck, Phone, Building2, MapPin, Globe, CreditCard, History, ShoppingBag, Search, MessageCircle, Smartphone, ChevronDown, ChevronRight, LayoutGrid, FolderPlus, FolderInput } from 'lucide-react';
 import { initializeFirebase, disconnectFirebase, getSavedConfig, getDb, createSecondaryAuthUser } from '../services/firebase';
 import { api } from '../services/api';
 import { uploadFile } from '../services/storage';
@@ -95,6 +94,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [editingCategory, setEditingCategory] = useState<FinanceCategoryDefinition | null>(null);
 
+  // Category Renaming State
+  const [renamingCategory, setRenamingCategory] = useState<{oldName: string, newName: string} | null>(null);
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+
   // Permission Editing State
   const [localPermissions, setLocalPermissions] = useState<RolePermissionsMap>(permissions);
 
@@ -103,6 +106,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [companyPhone, setCompanyPhone] = useState('');
   const [companyLogo, setCompanyLogo] = useState('');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  // Search Terms
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Material Grouping State
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
   // Update local permissions if parent state changes (sync)
   useEffect(() => {
@@ -152,6 +161,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const [materialBrand, setMaterialBrand] = useState('');
   const [materialPrice, setMaterialPrice] = useState('');
   const [materialDesc, setMaterialDesc] = useState('');
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
 
   const [categoryName, setCategoryName] = useState('');
   const [categoryType, setCategoryType] = useState<'EXPENSE' | 'INCOME' | 'BOTH'>('BOTH');
@@ -178,7 +188,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       };
       const cat = categoryMap[activeTab];
       return users
-        .filter(u => u.category === cat)
+        .filter(u => u.category === cat && (u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase())))
         .sort((a, b) => {
             if (currentUser.id === a.id) return -1; // Current User first
             if (currentUser.id === b.id) return 1;
@@ -189,6 +199,37 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   };
   
   const pendingCount = users.filter(u => u.status === 'PENDING').length;
+
+  // --- MATERIALS GROUPING ---
+  const groupedMaterials = useMemo(() => {
+      const filtered = materials.filter(m => 
+          m.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+          (m.category || '').toLowerCase().includes(searchTerm.toLowerCase())
+      );
+
+      const groups: Record<string, Material[]> = {};
+      filtered.forEach(m => {
+          const cat = m.category || 'Sem Categoria';
+          if (!groups[cat]) groups[cat] = [];
+          groups[cat].push(m);
+      });
+      return groups;
+  }, [materials, searchTerm]);
+
+  // Derived list of unique categories for dropdowns
+  const availableCategories = useMemo(() => {
+      const cats = new Set(materials.map(m => m.category || 'Geral'));
+      // Add default ones if missing
+      ['Alvenaria', 'Acabamento', 'Elétrica', 'Hidráulica', 'Pintura', 'Cobertura', 'Estrutural'].forEach(c => cats.add(c));
+      return Array.from(cats).sort();
+  }, [materials]);
+
+  const toggleMaterialCategory = (cat: string) => {
+      setExpandedCategories(prev => ({
+          ...prev,
+          [cat]: !prev[cat] // toggle
+      }));
+  };
 
   // --- SUPPLIER HISTORY LOGIC ---
   const supplierHistory = useMemo(() => {
@@ -421,10 +462,66 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       }
   };
 
-  const openMaterialModal = (material?: Material) => {
-    if (material) { setEditingMaterial(material); setMaterialName(material.name); setMaterialCategory(material.category); setMaterialUnit(material.unit); setMaterialBrand(material.brand || ''); setMaterialPrice(material.priceEstimate ? material.priceEstimate.toString() : ''); setMaterialDesc(material.description || ''); } 
-    else { setEditingMaterial(null); setMaterialName(''); setMaterialCategory('Alvenaria'); setMaterialUnit('un'); setMaterialBrand(''); setMaterialPrice(''); setMaterialDesc(''); }
+  const openMaterialModal = (material?: Material, presetCategory?: string) => {
+    if (material) { 
+        setEditingMaterial(material); 
+        setMaterialName(material.name); 
+        setMaterialCategory(material.category); 
+        setMaterialUnit(material.unit); 
+        setMaterialBrand(material.brand || ''); 
+        setMaterialPrice(material.priceEstimate ? material.priceEstimate.toString() : ''); 
+        setMaterialDesc(material.description || ''); 
+        setIsCustomCategory(false);
+    } else { 
+        setEditingMaterial(null); 
+        setMaterialName(''); 
+        setMaterialCategory(presetCategory || 'Alvenaria'); 
+        setMaterialUnit('un'); 
+        setMaterialBrand(''); 
+        setMaterialPrice(''); 
+        setMaterialDesc(''); 
+        setIsCustomCategory(!!presetCategory); // If preset, assume creation flow
+    }
     setIsMaterialModalOpen(true);
+  };
+
+  // --- NEW: Category Rename Logic ---
+  const handleRenameCategoryInit = (oldName: string) => {
+      setRenamingCategory({ oldName, newName: oldName });
+  };
+
+  const executeCategoryRename = async () => {
+      if (!renamingCategory || !renamingCategory.newName.trim()) return;
+      if (renamingCategory.oldName === renamingCategory.newName) {
+          setRenamingCategory(null);
+          return;
+      }
+
+      setIsProcessingBatch(true);
+      try {
+          const itemsToUpdate = materials.filter(m => m.category === renamingCategory.oldName);
+          // Batch Update: Loop and update each material
+          const updatePromises = itemsToUpdate.map(item => 
+              onUpdateMaterial({ ...item, category: renamingCategory.newName })
+          );
+          await Promise.all(updatePromises);
+          
+          setRenamingCategory(null);
+      } catch (err) {
+          alert("Erro ao renomear categoria.");
+      } finally {
+          setIsProcessingBatch(false);
+      }
+  };
+
+  const handleCreateCategory = () => {
+      // Prompt user for name
+      const newName = window.prompt("Nome da Nova Categoria:");
+      if (newName && newName.trim()) {
+          // Open material modal with this category preset
+          openMaterialModal(undefined, newName.trim());
+          alert("Para criar a categoria, adicione o primeiro material a ela.");
+      }
   };
 
   const saveMaterial = async () => {
@@ -508,19 +605,32 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           <h2 className="text-2xl font-bold text-slate-800">Cadastros e Acessos</h2>
           <p className="text-slate-500">Gerencie colaboradores, clientes, fornecedores e configurações.</p>
         </div>
-        {activeTab !== 'SETTINGS' && activeTab !== 'PERMISSIONS' && (
-          <button 
-            onClick={() => {
-                if (activeTab === 'MATERIALS') openMaterialModal();
-                else if (activeTab === 'FINANCE_CATEGORIES') openCategoryModal();
-                else openUserModal();
-            }}
-            className="bg-pms-600 hover:bg-pms-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all"
-          >
-            <Plus size={20} />
-            {activeTab === 'MATERIALS' ? 'Novo Material' : activeTab === 'FINANCE_CATEGORIES' ? 'Nova Categoria' : `Novo ${getCategoryLabel(activeTab).slice(0, -1)}`}
-          </button>
-        )}
+        
+        {/* ACTION BUTTONS */}
+        <div className="flex gap-2">
+            {activeTab === 'MATERIALS' && (
+                <button 
+                    onClick={handleCreateCategory}
+                    className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-all"
+                >
+                    <FolderPlus size={18} /> Nova Categoria
+                </button>
+            )}
+            
+            {activeTab !== 'SETTINGS' && activeTab !== 'PERMISSIONS' && (
+            <button 
+                onClick={() => {
+                    if (activeTab === 'MATERIALS') openMaterialModal();
+                    else if (activeTab === 'FINANCE_CATEGORIES') openCategoryModal();
+                    else openUserModal();
+                }}
+                className="bg-pms-600 hover:bg-pms-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all"
+            >
+                <Plus size={20} />
+                {activeTab === 'MATERIALS' ? 'Novo Material' : activeTab === 'FINANCE_CATEGORIES' ? 'Nova Categoria' : `Novo ${getCategoryLabel(activeTab).slice(0, -1)}`}
+            </button>
+            )}
+        </div>
       </div>
 
       {/* TABS */}
@@ -536,49 +646,107 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           <TabButton active={activeTab === 'SETTINGS'} onClick={() => setActiveTab('SETTINGS')} icon={<Settings size={18}/>} label="Configurações" />
       </div>
 
-      <div className="flex-1 overflow-auto">
+      {/* SEARCH BAR (Common for most tabs) */}
+      {activeTab !== 'SETTINGS' && activeTab !== 'PERMISSIONS' && (
+          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm mb-6 flex items-center gap-2 flex-shrink-0">
+              <Search size={18} className="text-slate-400 ml-2" />
+              <input 
+                  type="text" 
+                  placeholder={activeTab === 'MATERIALS' ? "Buscar material ou categoria..." : "Buscar por nome ou email..."}
+                  className="w-full outline-none text-sm text-slate-700 bg-transparent"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+              />
+          </div>
+      )}
+
+      <div className="flex-1 overflow-auto custom-scroll">
         <div className="w-full space-y-6">
             
-            {/* MATERIALS TAB */}
+            {/* MATERIALS TAB (GROUPED BY CATEGORY) */}
             {activeTab === 'MATERIALS' && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
-                            <tr>
-                                <th className="px-6 py-4">Item / Descrição</th>
-                                <th className="px-6 py-4">Categoria</th>
-                                <th className="px-6 py-4">Unidade</th>
-                                <th className="px-6 py-4">Preço Est.</th>
-                                <th className="px-6 py-4 text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {materials.map(mat => (
-                                <tr key={mat.id} className="hover:bg-slate-50">
-                                    <td className="px-6 py-4">
-                                        <div className="font-bold text-slate-800">{mat.name}</div>
-                                        <div className="text-xs text-slate-500">{mat.brand || '-'}</div>
-                                    </td>
-                                    <td className="px-6 py-4"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs border border-slate-200">{mat.category}</span></td>
-                                    <td className="px-6 py-4 text-sm text-slate-600">{mat.unit}</td>
-                                    <td className="px-6 py-4 font-medium text-green-600">R$ {mat.priceEstimate?.toFixed(2) || '-'}</td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <button onClick={() => openMaterialModal(mat)} className="p-2 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded"><Edit2 size={16} /></button>
-                                            <button onClick={() => onDeleteMaterial(mat.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+                <div className="space-y-4 pb-10">
+                    {Object.keys(groupedMaterials).sort().map(category => {
+                        const items = groupedMaterials[category];
+                        const isExpanded = expandedCategories[category] !== false; // Default Open
+
+                        return (
+                            <div key={category} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+                                {/* Category Header */}
+                                <div className="bg-slate-50 p-4 flex justify-between items-center transition-colors">
+                                    <div 
+                                        className="flex items-center gap-3 cursor-pointer flex-1"
+                                        onClick={() => toggleMaterialCategory(category)}
+                                    >
+                                        <div className="bg-white p-1.5 rounded-md border border-slate-200 shadow-sm">
+                                            {isExpanded ? <ChevronDown size={16} className="text-slate-500"/> : <ChevronRight size={16} className="text-slate-500"/>}
                                         </div>
-                                    </td>
-                                </tr>
-                            ))}
-                            {materials.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum material cadastrado.</td></tr>}
-                        </tbody>
-                    </table>
+                                        <h3 className="font-bold text-slate-700">{category}</h3>
+                                        <span className="bg-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-full font-bold">
+                                            {items.length} itens
+                                        </span>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleRenameCategoryInit(category)}
+                                        className="p-1.5 text-slate-400 hover:text-pms-600 hover:bg-white rounded-lg transition-colors"
+                                        title="Renomear Categoria"
+                                    >
+                                        <Edit2 size={16} />
+                                    </button>
+                                </div>
+
+                                {/* Items Table */}
+                                {isExpanded && (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left">
+                                            <thead className="bg-white text-xs uppercase text-slate-400 font-bold border-b border-slate-100">
+                                                <tr>
+                                                    <th className="px-6 py-3 w-1/2">Descrição / Marca</th>
+                                                    <th className="px-6 py-3">Unidade</th>
+                                                    <th className="px-6 py-3">Preço Base</th>
+                                                    <th className="px-6 py-3 text-right">Ações</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {items.map(mat => (
+                                                    <tr key={mat.id} className="hover:bg-blue-50/30 transition-colors">
+                                                        <td className="px-6 py-3">
+                                                            <div className="font-bold text-slate-700">{mat.name}</div>
+                                                            {mat.brand && <div className="text-xs text-slate-400">{mat.brand}</div>}
+                                                        </td>
+                                                        <td className="px-6 py-3 text-sm text-slate-600">
+                                                            <span className="bg-slate-100 px-2 py-1 rounded border border-slate-200">{mat.unit}</span>
+                                                        </td>
+                                                        <td className="px-6 py-3 text-sm font-medium text-green-600">
+                                                            R$ {mat.priceEstimate?.toFixed(2) || '0.00'}
+                                                        </td>
+                                                        <td className="px-6 py-3 text-right">
+                                                            <div className="flex justify-end gap-2">
+                                                                <button onClick={() => openMaterialModal(mat)} className="p-1.5 text-slate-400 hover:text-pms-600 hover:bg-slate-100 rounded transition-colors"><Edit2 size={16} /></button>
+                                                                <button onClick={() => onDeleteMaterial(mat.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"><Trash2 size={16} /></button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {Object.keys(groupedMaterials).length === 0 && (
+                        <div className="p-10 text-center bg-slate-50 rounded-xl border border-slate-200 border-dashed text-slate-400">
+                            <Package size={32} className="mx-auto mb-2 opacity-20" />
+                            Nenhum material encontrado.
+                        </div>
+                    )}
                 </div>
             )}
 
             {/* USER LISTS */}
             {(activeTab === 'INTERNAL' || activeTab === 'CLIENTS' || activeTab === 'SUPPLIERS') && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in pb-10">
                 {getFilteredUsers().map(user => (
                     <div key={user.id} className={`bg-white p-6 rounded-xl shadow-sm border transition-all relative overflow-hidden ${user.status === 'PENDING' ? 'border-orange-300 ring-2 ring-orange-100' : 'border-slate-200'}`}>
                         {user.status === 'PENDING' && <div className="absolute top-0 left-0 w-full bg-orange-500 text-white text-[10px] font-bold text-center py-1">AGUARDANDO APROVAÇÃO</div>}
@@ -651,7 +819,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
             {/* PERMISSIONS TAB */}
             {activeTab === 'PERMISSIONS' && currentUser.role === UserRole.ADMIN && (
-                <div className="animate-fade-in space-y-6">
+                <div className="animate-fade-in space-y-6 pb-10">
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                             <div>
@@ -739,7 +907,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
             {/* SETTINGS TAB */}
             {activeTab === 'SETTINGS' && (
-                <div className="animate-fade-in space-y-8">
+                <div className="animate-fade-in space-y-8 pb-10">
                     {/* Connection Status */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -871,7 +1039,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
             {/* CATEGORIES TAB */}
             {activeTab === 'FINANCE_CATEGORIES' && (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in pb-10">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-bold">
                         <tr><th className="px-6 py-4">Nome da Categoria</th><th className="px-6 py-4">Tipo</th><th className="px-6 py-4 text-right">Ações</th></tr>
@@ -1211,8 +1379,44 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                  </div>
                  <div className="space-y-4">
                      <div><label className="block text-sm font-bold text-slate-700 mb-1">Nome do Material</label><input type="text" className="w-full border rounded p-2" value={materialName} onChange={(e) => setMaterialName(e.target.value)} /></div>
+                     
                      <div className="grid grid-cols-2 gap-4">
-                         <div><label className="block text-sm font-bold text-slate-700 mb-1">Categoria</label><select className="w-full border rounded p-2 bg-white" value={materialCategory} onChange={(e) => setMaterialCategory(e.target.value)}><option value="Alvenaria">Alvenaria</option><option value="Acabamento">Acabamento</option><option value="Elétrica">Elétrica</option><option value="Hidráulica">Hidráulica</option><option value="Pintura">Pintura</option><option value="Outros">Outros</option></select></div>
+                         <div>
+                             <label className="block text-sm font-bold text-slate-700 mb-1 flex justify-between">
+                                 Categoria
+                                 {!editingMaterial && !isCustomCategory && (
+                                     <button 
+                                        onClick={() => setIsCustomCategory(true)}
+                                        className="text-[10px] text-blue-600 font-bold hover:underline"
+                                     >
+                                         Digitar Nova
+                                     </button>
+                                 )}
+                                 {!editingMaterial && isCustomCategory && (
+                                     <button 
+                                        onClick={() => setIsCustomCategory(false)}
+                                        className="text-[10px] text-slate-500 font-bold hover:underline"
+                                     >
+                                         Selecionar
+                                     </button>
+                                 )}
+                             </label>
+                             
+                             {isCustomCategory ? (
+                                 <input 
+                                    type="text"
+                                    className="w-full border border-blue-300 rounded p-2 bg-blue-50 focus:bg-white transition-colors"
+                                    value={materialCategory}
+                                    onChange={(e) => setMaterialCategory(e.target.value)}
+                                    placeholder="Nova Categoria..."
+                                    autoFocus
+                                 />
+                             ) : (
+                                 <select className="w-full border rounded p-2 bg-white" value={materialCategory} onChange={(e) => setMaterialCategory(e.target.value)}>
+                                     {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                 </select>
+                             )}
+                         </div>
                          <div><label className="block text-sm font-bold text-slate-700 mb-1">Unidade</label><select className="w-full border rounded p-2 bg-white" value={materialUnit} onChange={(e) => setMaterialUnit(e.target.value)}><option value="un">Unidade (un)</option><option value="m">Metro (m)</option><option value="m²">Metro Quadrado (m²)</option><option value="m³">Metro Cúbico (m³)</option><option value="kg">Quilo (kg)</option><option value="saco">Saco</option><option value="lata">Lata</option></select></div>
                      </div>
                      <div className="grid grid-cols-2 gap-4">
@@ -1230,7 +1434,49 @@ export const UserManagement: React.FC<UserManagementProps> = ({
          </div>
       )}
 
-      {/* CATEGORY MODAL */}
+      {/* RENAME CATEGORY MODAL */}
+      {renamingCategory && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-bold text-slate-800">Renomear Categoria</h3>
+                      <button onClick={() => setRenamingCategory(null)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="mb-4">
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nome Atual</label>
+                      <div className="p-2 bg-slate-100 rounded text-slate-600 text-sm font-medium mb-3">{renamingCategory.oldName}</div>
+                      
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Novo Nome</label>
+                      <input 
+                          type="text" 
+                          className="w-full border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-pms-500 outline-none"
+                          value={renamingCategory.newName}
+                          onChange={(e) => setRenamingCategory({...renamingCategory, newName: e.target.value})}
+                          autoFocus
+                      />
+                      <p className="text-xs text-orange-600 mt-2 flex items-start gap-1">
+                          <AlertTriangle size={12} className="shrink-0 mt-0.5"/>
+                          Isso atualizará a categoria de todos os {groupedMaterials[renamingCategory.oldName]?.length || 0} materiais vinculados.
+                      </p>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                      <button onClick={() => setRenamingCategory(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold text-sm">Cancelar</button>
+                      <button 
+                        onClick={executeCategoryRename} 
+                        disabled={isProcessingBatch || !renamingCategory.newName.trim()}
+                        className="px-4 py-2 bg-pms-600 text-white rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50"
+                      >
+                          {isProcessingBatch ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>}
+                          Salvar
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* CATEGORY MODAL (Finance) */}
       {isCategoryModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
               <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in duration-200">

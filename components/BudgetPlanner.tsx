@@ -1,1 +1,1 @@
-// This file is deprecated. Functionality moved to PlanningCenter.tsx
+// Functionality merged into PlanningCenter.tsx

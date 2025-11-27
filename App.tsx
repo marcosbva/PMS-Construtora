@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { User, ConstructionWork, Task, FinancialRecord, DailyLog, Material, MaterialOrder, UserRole, UserCategory, WorkStatus, RolePermissionsMap, DEFAULT_ROLE_PERMISSIONS, InventoryItem, RentalItem, FinanceCategoryDefinition } from './types';
 import { AuthScreen } from './components/AuthScreen';
@@ -95,7 +96,7 @@ function App() {
               
               {/* GLOBAL MODULES (Restored) */}
               <button onClick={() => navigateTo('GLOBAL_FINANCE')} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300"><DollarSign size={18}/> Financeiro Global</button>
-              <button onClick={() => navigateTo('MATERIALS')} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300"><Package size={18}/> Materiais & Compras</button>
+              {/* REMOVED: Materiais Menu Global as requested */}
               <button onClick={() => navigateTo('INVENTORY')} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300"><Wrench size={18}/> Estoque & Equip.</button>
               <button onClick={() => navigateTo('TEAM')} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-slate-800 text-slate-300"><Users size={18}/> Equipe & Config</button>
 
@@ -116,7 +117,6 @@ function App() {
         <div className="flex-1 overflow-y-auto custom-scroll w-full">
             {currentView === 'DASHBOARD' && <div className="p-8"><Dashboard works={works} finance={finance} inventory={inventory} rentals={rentals}/></div>}
             {currentView === 'GLOBAL_FINANCE' && <div className="p-8"><FinanceView records={finance} currentUser={currentUser} users={users} onAddRecord={api.createFinance} onUpdateRecord={api.updateFinance} onDeleteRecord={api.deleteFinance} financeCategories={financeCategories}/></div>}
-            {currentView === 'MATERIALS' && <div className="p-8"><MaterialOrders orders={orders} works={works} tasks={tasks} users={users} materials={materials} currentUser={currentUser} onAddOrder={api.createOrder} onUpdateOrder={api.updateOrder} onOpenMaterialCatalog={() => navigateTo('TEAM')} /></div>}
             {currentView === 'INVENTORY' && <div className="p-8"><InventoryManager inventory={inventory} works={works} users={users} onAdd={api.createInventoryItem} onUpdate={api.updateInventoryItem} onDelete={api.deleteInventoryItem} /></div>}
             {currentView === 'TEAM' && <div className="p-8"><UserManagement currentUser={currentUser} users={users} materials={materials} orders={orders} taskStatuses={DEFAULT_TASK_STATUSES} financeCategories={financeCategories} permissions={DEFAULT_ROLE_PERMISSIONS} onAddUser={api.createUser} onUpdateUser={api.updateUser} onDeleteUser={api.deleteUser} onUpdateStatuses={()=>{}} onAddMaterial={api.createMaterial} onUpdateMaterial={api.updateMaterial} onDeleteMaterial={api.deleteMaterial} onAddCategory={api.createCategory} onUpdateCategory={api.updateCategory} onDeleteCategory={api.deleteCategory} onUpdatePermissions={()=>{}} /></div>}
 
@@ -135,6 +135,7 @@ function App() {
                                 { id: 'PLANNING_CENTER', label: 'Planejamento Integrado' }, // New Planning Center
                                 { id: 'WEEKLY', label: 'Execução Semanal' }, // Replaces Kanban
                                 { id: 'FINANCE', label: 'Financeiro' },
+                                { id: 'MATERIALS', label: 'Compras' }, // NEW
                                 { id: 'LOGS', label: 'Diário de Obra' },
                                 { id: 'RENTAL', label: 'Aluguéis' },
                             ].map(tab => (
@@ -155,6 +156,9 @@ function App() {
                         )}
                         {currentView === 'FINANCE' && (
                             <FinanceView records={finance.filter(f => f.workId === activeWork.id)} work={activeWork} currentUser={currentUser} users={users} onAddRecord={api.createFinance} onUpdateRecord={api.updateFinance} onDeleteRecord={api.deleteFinance} />
+                        )}
+                        {currentView === 'MATERIALS' && (
+                            <MaterialOrders orders={orders} works={works} tasks={tasks} users={users} materials={materials} currentUser={currentUser} onAddOrder={api.createOrder} onUpdateOrder={api.updateOrder} onOpenMaterialCatalog={() => navigateTo('TEAM')} />
                         )}
                         {currentView === 'LOGS' && (
                             <DailyLogView logs={logs.filter(l => l.workId === activeWork.id)} users={users} tasks={tasks} workId={activeWork.id} currentUser={currentUser} onAddLog={api.createLog} onUpdateLog={api.updateLog} onDeleteLog={api.deleteLog} onUpdateTask={api.updateTask} />

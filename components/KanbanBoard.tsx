@@ -1,1 +1,1 @@
-// This file is deprecated. Workflow simplified to WeeklyPlanning.tsx
+// Workflow simplified to Weekly Planning only.

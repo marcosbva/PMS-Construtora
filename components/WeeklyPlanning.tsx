@@ -1,8 +1,9 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Task, TaskStatus, TaskPriority, User, WorkBudget } from '../types';
 import { api } from '../services/api';
-import { Calendar, CheckSquare, Square, ChevronLeft, ChevronRight, Plus, User as UserIcon, ListChecks, AlertCircle, RefreshCw, X, Link as LinkIcon, AlertTriangle, PieChart, Trash2 } from 'lucide-react';
+import { Calendar, CheckSquare, Square, ChevronLeft, ChevronRight, Plus, User as UserIcon, ListChecks, AlertCircle, RefreshCw, X, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 
 interface WeeklyPlanningProps {
   workId: string;
@@ -32,7 +33,6 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskAssignee, setNewTaskAssignee] = useState('');
   const [selectedStageId, setSelectedStageId] = useState('');
-  const [newStageContribution, setNewStageContribution] = useState('');
   
   const [budget, setBudget] = useState<WorkBudget | null>(null);
 
@@ -81,13 +81,6 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
       return Math.round((completed / weeklyTasks.length) * 100);
   }, [weeklyTasks]);
 
-  // Calculate already allocated % for the selected stage to guide user
-  const allocatedStagePercent = useMemo(() => {
-      if (!selectedStageId) return 0;
-      const tasksInStage = tasks.filter(t => t.stageId === selectedStageId);
-      return tasksInStage.reduce((acc, t) => acc + (t.stageContribution || 0), 0);
-  }, [selectedStageId, tasks]);
-
   const handleWeekChange = (direction: 'prev' | 'next') => {
       const [yearStr, weekStr] = selectedWeek.split('-W');
       let year = parseInt(yearStr);
@@ -121,13 +114,11 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
           assignedTo: newTaskAssignee || undefined,
           dueDate: new Date().toISOString().split('T')[0],
           images: [],
-          stageId: selectedStageId, // Mandatory Link
-          stageContribution: newStageContribution ? parseFloat(newStageContribution) : 0, // Weighted Progress
+          stageId: selectedStageId // Mandatory Link
       };
 
       onAddTask(newTask);
       setNewTaskTitle('');
-      setNewStageContribution('');
   };
 
   const toggleTaskCompletion = (task: Task) => {
@@ -228,22 +219,6 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
                       </select>
                   </div>
                   
-                  {/* CONTRIBUTION INPUT */}
-                  <div className="w-full md:w-48 relative" title="Quanto esta tarefa representa do total da etapa?">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                          <PieChart size={18}/>
-                      </div>
-                      <input 
-                        type="number"
-                        min="0"
-                        max="100"
-                        className="w-full pl-10 border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-pms-500 outline-none"
-                        placeholder="Peso (%)"
-                        value={newStageContribution}
-                        onChange={(e) => setNewStageContribution(e.target.value)}
-                      />
-                  </div>
-
                   <div className="w-full md:w-48 relative">
                       <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <select 
@@ -264,12 +239,6 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
                   </button>
               </div>
           </div>
-          
-          {selectedStageId && (
-              <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
-                  <PieChart size={12}/> Etapa já tem <strong>{allocatedStagePercent}%</strong> alocado em tarefas. Restam <strong>{Math.max(0, 100 - allocatedStagePercent)}%</strong>.
-              </p>
-          )}
           {!selectedStageId && <p className="text-[10px] text-orange-600 mt-2 flex items-center gap-1"><AlertTriangle size={10}/> Selecione a etapa do cronograma para liberar a adição.</p>}
       </div>
 
@@ -297,16 +266,9 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
                               </button>
                               
                               <div className="flex-1">
-                                  <div className="flex justify-between items-start">
-                                      <p className={`text-base font-medium ${isDone ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                                          {task.title}
-                                      </p>
-                                      {task.stageContribution && task.stageContribution > 0 && (
-                                          <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500 font-bold border border-slate-200" title="Contribuição para Etapa Macro">
-                                              Peso: {task.stageContribution}%
-                                          </span>
-                                      )}
-                                  </div>
+                                  <p className={`text-base font-medium ${isDone ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                                      {task.title}
+                                  </p>
                                   <div className="flex items-center gap-2 mt-1">
                                       <span className="text-xs font-bold text-pms-600 bg-pms-50 px-2 py-0.5 rounded flex items-center gap-1 border border-pms-100">
                                           <LinkIcon size={10}/> {stageName}
@@ -324,9 +286,8 @@ export const WeeklyPlanning: React.FC<WeeklyPlanningProps> = ({ workId, tasks, u
                                       if(window.confirm("Tem certeza que deseja excluir esta tarefa?")) onDeleteTask(task.id);
                                   }}
                                   className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  title="Excluir Tarefa"
                               >
-                                  <Trash2 size={18} />
+                                  <X size={18} />
                               </button>
                           </div>
                       );

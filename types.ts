@@ -140,7 +140,6 @@ export interface Task {
   stageId?: string; // Links to BudgetCategory (Macro Stage)
   estimatedCost?: number;
   physicalProgress?: number;
-  stageContribution?: number; // % that this task represents of the stageId total completion
 }
 
 export enum FinanceType {

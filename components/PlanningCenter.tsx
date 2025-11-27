@@ -153,25 +153,13 @@ export const PlanningCenter: React.FC<PlanningCenterProps> = ({ work, tasks, onU
         }
     };
 
-    // Calculate Progress per Stage based on Tasks linked to it (Weighted Contribution)
+    // Calculate Progress per Stage based on Tasks linked to it
     const getStageProgress = (stageId: string) => {
         const stageTasks = tasks.filter(t => t.stageId === stageId);
         if (stageTasks.length === 0) return 0;
         
-        // Sum of contribution of Completed tasks
-        // If task is DONE, we take its full contribution. 
-        // If task is PARTIALLY done (physicalProgress), we take partial contribution? 
-        // For simplicity and matching the user request: "Say % it will conclude".
-        // Let's use physicalProgress * contribution if available, else 100% * contribution if Done.
-        
-        const totalProgress = stageTasks.reduce((acc, task) => {
-            const contribution = task.stageContribution || 0;
-            const completion = task.status === TaskStatus.DONE ? 100 : (task.physicalProgress || 0);
-            
-            return acc + ((contribution * completion) / 100);
-        }, 0);
-
-        return Math.min(100, Math.round(totalProgress));
+        const completed = stageTasks.filter(t => t.status === TaskStatus.DONE).length;
+        return Math.round((completed / stageTasks.length) * 100);
     };
 
     if (isLoading) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-pms-600"/></div>;
